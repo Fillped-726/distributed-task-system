@@ -1,0 +1,31 @@
+syntax = "proto3";
+package dts.task;
+
+import "google/protobuf/struct.proto";
+import "dts/common/resource.proto";
+import "dts/common/shard.proto";
+import "dts/task/task_state.proto";
+
+message TaskEdge {
+  string parent_id = 1; // 父任务的 task_id
+  string child_id  = 2; // 子任务的 task_id
+}
+
+message Task {
+  string task_id           = 1;   
+  string client_id    = 2;
+  uint32 priority     = 3;
+  TaskState state     = 4;
+  string func_name    = 5;
+  google.protobuf.Struct func_params = 6;
+  dts.common.Resource required = 7;
+  dts.common.Shard shard       = 8;
+  uint32 timeout_ms   = 9;
+  uint32 max_retry    = 10;
+  uint32 retry_count  = 11;
+  int64  submit_ts    = 12;
+  int64  start_ts     = 13;
+  int64  finish_ts    = 14;
+  google.protobuf.Struct result = 15;
+  string error_msg    = 16;
+}

@@ -39,8 +39,6 @@ private:
 
     boost::asio::io_context& io_context_;  // 用于异步执行
     std::unordered_map<std::string, TaskFunction> functions_;  // 函数映射
-    // 假设系统资源（可通过 resource-reporter 获取）
-    Resource available_resources_ = {4.0, 8192};  // 示例：4核，8GB
 
     inline static std::atomic<int> retrying_cnt{0};
     static constexpr int MAX_CONCURRENT_RETRY = 10;

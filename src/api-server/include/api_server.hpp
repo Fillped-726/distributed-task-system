@@ -8,15 +8,17 @@
 #include <functional>
 #include <thread>
 #include "logger.hpp" 
-#include "task.grpc.pb.h"       
-#include "task.pb.h"
+#include "dts/task/task.grpc.pb.h"       
+#include "dts/task/task.pb.h"
+#include "dts/service/task_service.grpc.pb.h"       
+#include "dts/service/task_service.pb.h"
 
-namespace dts {
 
-using dts::proto::Task;
-using dts::proto::TaskResponse;
-using dts::proto::TaskService;
-using AsyncTaskService = dts::proto::TaskService::AsyncService;
+
+using PbSubmitDagResponse = dts::service::SubmitDagResponse;
+using dts::service::TaskService;
+using PbSubmitDagRequest = dts::service::SubmitDagRequest;
+using AsyncTaskService = dts::service::TaskService::AsyncService;
 
 // 前向声明
 class AsyncServer;
@@ -78,21 +80,26 @@ private:
     CallStatus                                  status_;
 };
 // 高性能异步服务器（零手写状态机）
+class PostgresConnection;
 class AsyncServer final {
 public:
-    AsyncServer();
+    explicit AsyncServer(std::shared_ptr<PostgresConnection> db_conn);
     ~AsyncServer();
     void Run(uint16_t port = 0);          // 0 = 随机端口
     void Shutdown();                      // 优雅停机
     uint16_t ListenPort() const { return listen_port_; }
 
     // 业务注册点：只写函数，不写类
-    using SubmitTaskFunc = std::function<void(Task*, TaskResponse*)>;
+    using SubmitTaskFunc = std::function<void(
+        std::shared_ptr<PostgresConnection> db_conn, // <-- 新增!
+        PbSubmitDagRequest* request,                  // gRPC 请求
+        PbSubmitDagResponse* response                // gRPC 响应
+    )>;
     void SetSubmitTaskHandler(SubmitTaskFunc f) { submit_task_ = std::move(f); }
 
 private:
     void DriveCompletionQueue(grpc::ServerCompletionQueue* cq);
-    void OnSubmitTask(AsyncCallContext<AsyncTaskService, Task, TaskResponse>* ctx);
+    void OnSubmitDag(AsyncCallContext<AsyncTaskService, PbSubmitDagRequest, PbSubmitDagResponse>* ctx);
 
     std::vector<std::unique_ptr<grpc::ServerCompletionQueue>> cqs_;
     AsyncTaskService service_;
@@ -102,6 +109,6 @@ private:
     int listen_port_ = 0;
 
     SubmitTaskFunc submit_task_;          // 业务回调
+    std::shared_ptr<PostgresConnection> db_conn_;
 };
 
-} // namespace dts

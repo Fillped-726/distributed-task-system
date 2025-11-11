@@ -1,0 +1,7 @@
+syntax = "proto3";
+package dts.common;
+
+message Resource {
+  double cpu_core = 1;
+  uint64 mem_mb   = 2;
+}

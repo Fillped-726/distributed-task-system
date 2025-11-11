@@ -1,0 +1,13 @@
+syntax = "proto3";
+package dts.error;
+
+import "dts/error/sys_error.proto";
+import "dts/error/job_error.proto";
+
+message Error {
+  oneof code {
+    SysErr sys = 1;
+    JobErr job = 2;
+  }
+  string msg = 10;
+}

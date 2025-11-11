@@ -100,14 +100,43 @@ set(GLOG_LIBRARY glog::glog)
 
 find_package(Boost 1.80 REQUIRED COMPONENTS system filesystem)
 find_package(nlohmann_json REQUIRED)
+find_package(PostgreSQL REQUIRED)
 
 set(PROTOC_EXEC  "${grpc_BINARY_DIR}/third_party/protobuf/protoc")
 set(GRPC_PLUGIN  "${grpc_BINARY_DIR}/grpc_cpp_plugin")
+
+# 拉取 cpp-httplib
+FetchContent_Declare(
+    httplib
+    GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
+
+    GIT_TAG v0.14.3  
+)
+FetchContent_MakeAvailable(httplib)
+
+# --- 拉取 libpqxx C++ 库 ---
+FetchContent_Declare(
+    libpqxx
+    GIT_REPOSITORY https://gitee.com/mirrors/libpqxx.git
+    GIT_TAG        7.9.0 
+    CMAKE_ARGS     
+        -DBUILD_TESTS=OFF 
+        
+
+        -DCMAKE_CXX_STANDARD=17
+        -DCMAKE_CXX_STANDARD_REQUIRED=ON
+
+)
+
+set(FETCHCONTENT_OVERRIDE_FIND_PACKAGE_PostgreSQL TRUE)
+FetchContent_MakeAvailable(libpqxx)
 
 # ---------- 业务 ----------
 add_subdirectory(src/common)
 add_subdirectory(src/api-server)
 add_subdirectory(src/worker/task-executor)
+add_subdirectory(src/client)
+add_subdirectory(src/api-web)
 
 # ---------- 测试 ----------
 enable_testing()

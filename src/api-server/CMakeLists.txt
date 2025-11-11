@@ -11,6 +11,7 @@ set(TARGET_NAME api-server)
 #----------------------------------------------------------
 add_library(api_server_lib OBJECT
     src/api_server.cpp
+    src/task_submitter.cpp
 )
 
 target_compile_features(api_server_lib PUBLIC cxx_std_20)
@@ -39,6 +40,7 @@ target_link_libraries(api_server_lib
         Boost::system
         Boost::filesystem
         nlohmann_json::nlohmann_json
+        pqxx
 )
 
 #----------------------------------------------------------

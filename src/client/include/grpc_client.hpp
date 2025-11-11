@@ -1,0 +1,47 @@
+#pragma once
+#include "dts/task/task.pb.h"
+#include "dts/task/task.grpc.pb.h"
+#include "dts/service/task_service.pb.h"
+#include "dts/service/task_service.grpc.pb.h"
+#include <grpcpp/grpcpp.h>
+#include <grpcpp/create_channel.h>
+#include <grpcpp/client_context.h>
+#include <grpcpp/support/async_stream.h>
+#include <future>
+#include <memory>
+#include <atomic>
+#include <functional>
+#include "thread_pool.hpp"
+#include "task.hpp"
+#include "utils.hpp"
+#include "converters.hpp"
+#include "async_tags.hpp"
+#include <mutex>
+
+namespace dts {
+
+// ---------- 客户端 ----------
+class GrpcClient {
+public:
+    GrpcClient(const std::string& target);
+    ~GrpcClient();
+
+    void CompleteRpc();
+    SubmitDagResponse submit_dag_sync(const PbSubmitDagRequest& req);
+    bool cancel_task(const std::string& task_id);
+    Task query_status(const std::string& task_id);
+    void listen_results(const std::string& client_id, DagCallback callback);
+    std::future<SubmitDagResponse> submit_dag_async(const PbSubmitDagRequest& req, DagCallback callback = nullptr);
+    std::future<bool> cancel_task_async(const std::string& task_id);
+    std::future<Task> query_status_async(const std::string& task_id);
+
+private:
+    std::shared_ptr<grpc::Channel> channel_;
+    std::unique_ptr<TaskService::Stub> stub_;
+    grpc::CompletionQueue cq_;
+    std::shared_ptr<ThreadPool> thread_pool_;
+    std::atomic<bool> shutdown_{false};
+    std::thread cq_thread_;
+};
+
+}   // namespace dts

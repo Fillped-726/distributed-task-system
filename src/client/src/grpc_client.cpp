@@ -2,7 +2,6 @@
 
 namespace dts {
 
-
 // ---------- 构造/析构 ----------
 GrpcClient::GrpcClient(const std::string& target)
     : stub_(TaskService::NewStub(
@@ -40,29 +39,39 @@ void GrpcClient::CompleteRpc() {
 }
 
 // ---------- 各 RPC 实现 ----------
-std::future<Task> GrpcClient::submit_task_async(const Task& task, Callback cb) {
+//To do 提交和结果分离
+std::future<SubmitDagResponse> GrpcClient::submit_dag_async(
+    const PbSubmitDagRequest& req,
+    DagCallback cb
+) {
     if (!stub_) {
-        auto prom = std::make_shared<std::promise<Task>>();
+        auto prom = std::make_shared<std::promise<SubmitDagResponse>>();
         prom->set_exception(std::make_exception_ptr(
-            GrpcError(grpc::Status(grpc::StatusCode::UNAVAILABLE,
-                                   "stub_ is null (channel create failed or moved)"))));
-        if (cb) cb(Task{}, grpc::Status(grpc::StatusCode::UNAVAILABLE, "stub_ null"));
+            GrpcError(grpc::Status(grpc::StatusCode::UNAVAILABLE, "stub_ is null"))));
+        if (cb) cb(SubmitDagResponse{}, grpc::Status(grpc::StatusCode::UNAVAILABLE, "stub_ null"));
         return prom->get_future();
     }
 
-    auto promise = std::make_shared<std::promise<Task>>();
-    auto *tag = new AsyncSubmitTag(promise, std::move(cb));
+    // 1. 创建 Promise 和 Tag
+    auto promise = std::make_shared<std::promise<SubmitDagResponse>>();
+    auto* tag = new AsyncDagSubmitTag(promise, std::move(cb));
 
-    auto future = promise->get_future();
-    tag->reader = stub_->PrepareAsyncSubmitTask(&tag->context,
-                                                TaskToProto(task), &cq_);
+    // 2. 准备异步 RPC
+    tag->reader = stub_->PrepareAsyncSubmitDag(&tag->context, // <-- 调用 PrepareAsyncSubmitDag
+                                             req, 
+                                             &cq_);
+
+    // 3. (关键) 启动调用，并将 tag 传入
+    // StartCall 会立即返回，gRPC 会将 tag(this) 放入完成队列 (触发 kLaunch)
     tag->reader->StartCall();
 
+    tag->reader->Finish(&tag->response, &tag->status, (void*)tag);
 
-    return future;
+    // 4. 返回 future
+    return promise->get_future();
 }
 
-Task GrpcClient::submit_task_sync(const Task& task) {
+SubmitDagResponse GrpcClient::submit_dag_sync(const PbSubmitDagRequest& req) {
     if (!stub_) {
         throw GrpcError(grpc::Status(grpc::StatusCode::UNAVAILABLE,
                                      "channel not created / connection refused"));
@@ -70,18 +79,30 @@ Task GrpcClient::submit_task_sync(const Task& task) {
 
     grpc::ClientContext ctx;
     ctx.set_deadline(std::chrono::system_clock::now() +
-                     std::chrono::seconds(5));  // 5 秒超时
+                     std::chrono::seconds(10));  // 给予 DAG 提交 10 秒超时
 
-    TaskResponse resp;
-    grpc::Status st = stub_->SubmitTask(&ctx, TaskToProto(task), &resp);
+    
+    SubmitDagResponse resp;
+    grpc::Status st = stub_->SubmitDag(&ctx, req, &resp); // 注意: 调用 SubmitDag
 
+    /* 3. (已修改) 判失败 */
     if (!st.ok()) {
-        std::cerr << "[ERROR] SubmitTask failed: "
+        std::cerr << "[ERROR] SubmitDag failed: " // RPC 命名已更改
                   << st.error_code() << " - " << st.error_message() << std::endl;
         throw GrpcError(st);
     }
 
-    return TaskFromProto(resp.task());
+    /* (可选) 检查服务端的业务 Header */
+    if (resp.header().code() != 0) {
+        std::cerr << "[ERROR] SubmitDag rejected by server: code="
+                  << resp.header().code() << ", msg=" << resp.header().msg() << std::endl;
+        // 抛出一个业务异常
+        throw std::runtime_error("Server rejected DAG: " + resp.header().msg());
+    }
+
+    /* 4. (已修改) 返回完整的 Protobuf 响应 */
+    // (删除原有的: return TaskFromProto(resp.task());)
+    return resp;
 }
 
 std::future<bool> GrpcClient::cancel_task_async(const std::string& task_id) {
@@ -97,7 +118,7 @@ std::future<bool> GrpcClient::cancel_task_async(const std::string& task_id) {
 std::future<Task> GrpcClient::query_status_async(const std::string& task_id) {
     auto tag = std::make_unique<AsyncQueryTag>();
     tag->request.set_task_id(task_id);
-    tag->reader = stub_->PrepareAsyncQueryStatus(&tag->context,
+    tag->reader = stub_->PrepareAsyncQueryTask(&tag->context,
                                                  tag->request, &cq_);
     tag->reader->StartCall();
     tag->reader->Finish(&tag->response, &tag->status, tag.release());
@@ -111,13 +132,13 @@ Task GrpcClient::query_status(const std::string& task_id) {
     return query_status_async(task_id).get();
 }
 
-// 流式监听
-void GrpcClient::listen_results(const std::string& client_id, Callback cb) {
-    auto tag = std::make_unique<AsyncListenTag>(std::move(cb));
-    tag->request.set_client_id(client_id);
-    tag->reader = stub_->PrepareAsyncListenResults(&tag->context,
-                                                   tag->request, &cq_);
-    tag->reader->StartCall(tag.release()); 
-}
+// 流式监听--待完善
+// void GrpcClient::listen_results(const std::string& client_id, Callback cb) {
+//     auto tag = std::make_unique<AsyncListenTag>(std::move(cb));
+//     tag->request.set_client_id(client_id);
+//     tag->reader = stub_->PrepareAsyncListenResults(&tag->context,
+//                                                    tag->request, &cq_);
+//     tag->reader->StartCall(tag.release()); 
+// }
 
 }   // namespace dts

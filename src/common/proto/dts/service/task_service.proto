@@ -1,0 +1,52 @@
+syntax = "proto3";
+package dts.service;
+
+import "dts/task/task.proto";
+import "dts/error/error.proto";
+
+message CancelTaskRequest  { string task_id = 1; }
+message QueryTaskRequest   { string task_id = 1; }
+message SubscribeRequest   { string client_id = 1; }
+message SubmitDagRequest {
+  string job_def_id = 1;           
+  string business_id = 2;  
+  repeated dts.task.Task tasks = 3; 
+  repeated dts.task.TaskEdge edges = 4;       
+}
+
+// *************** 公共应答头 ***************
+message RpcRespHeader {
+  int32  code       = 1; // 0=成功，非0=错误码
+  string msg        = 2; // 错误描述，成功可为空
+  string request_id = 3; // 链路追踪 ID
+}
+
+// *************** 业务响应体 ***************
+message SubmitDagResponse {
+  RpcRespHeader header = 1;
+  string job_def_id = 2;        
+}
+
+message CancelTaskResponse {
+  RpcRespHeader header = 1;
+  bool success         = 2; // 业务结果
+}
+
+message QueryTaskResponse {
+  RpcRespHeader header = 1;
+  dts.task.Task task   = 2; // 查询到的任务
+}
+
+// 流式返回：同样带公共头
+message TaskResult {
+  RpcRespHeader header  = 1;
+  dts.task.Task task    = 2;
+}
+
+// *************** 服务定义 ***************
+service TaskService {
+  rpc SubmitDag(SubmitDagRequest) returns (SubmitDagResponse);
+  rpc CancelTask(CancelTaskRequest) returns (CancelTaskResponse);
+  rpc QueryTask(QueryTaskRequest)   returns (QueryTaskResponse);
+  rpc ListenResults(SubscribeRequest) returns (stream TaskResult);
+}

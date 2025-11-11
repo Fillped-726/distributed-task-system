@@ -53,11 +53,11 @@ set_target_properties(hiredis::hiredis PROPERTIES
   INTERFACE_INCLUDE_DIRECTORIES "/home/sakura/text/distributed-task-system/build/_deps/hiredis-src"
 )
 
-# Import target "hiredis::hiredis" for configuration "Debug"
-set_property(TARGET hiredis::hiredis APPEND PROPERTY IMPORTED_CONFIGURATIONS DEBUG)
+# Import target "hiredis::hiredis" for configuration ""
+set_property(TARGET hiredis::hiredis APPEND PROPERTY IMPORTED_CONFIGURATIONS NOCONFIG)
 set_target_properties(hiredis::hiredis PROPERTIES
-  IMPORTED_LINK_INTERFACE_LANGUAGES_DEBUG "C"
-  IMPORTED_LOCATION_DEBUG "/home/sakura/text/distributed-task-system/build/_deps/hiredis-build/libhiredisd.a"
+  IMPORTED_LINK_INTERFACE_LANGUAGES_NOCONFIG "C"
+  IMPORTED_LOCATION_NOCONFIG "/home/sakura/text/distributed-task-system/build/_deps/hiredis-build/libhiredis.a"
   )
 
 # This file does not depend on other imported targets which have

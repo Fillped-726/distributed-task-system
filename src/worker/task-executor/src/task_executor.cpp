@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <boost/asio/post.hpp>
 #include <boost/asio/steady_timer.hpp>
+#include "resource_tracker.hpp"
 #include "utils.hpp"  
 #include "thread_pool.hpp"  
 
@@ -119,9 +120,7 @@ void TaskExecutor::run_task(std::shared_ptr<Task> task) {
 }
 
 bool TaskExecutor::check_resources(const Resource& required) {
-    // 简单检查（实际应与 resource-reporter 集成）
-    return required.cpu_core <= available_resources_.cpu_core &&
-           required.mem_mb <= available_resources_.mem_mb;
+    return dts::common::ResourceTracker::instance().check_available(required);
 }
 
 void TaskExecutor::update_task_state(std::shared_ptr<Task> task, TaskState state,

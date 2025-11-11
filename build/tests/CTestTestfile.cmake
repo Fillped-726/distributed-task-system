@@ -4,11 +4,5 @@
 # 
 # This file includes the relevant testing commands required for 
 # testing this directory and lists subdirectories to be tested as well.
-add_test([=[TaskSerializationTest]=] "/home/sakura/text/distributed-task-system/build/tests/task_test")
-set_tests_properties([=[TaskSerializationTest]=] PROPERTIES  _BACKTRACE_TRIPLES "/home/sakura/text/distributed-task-system/tests/CMakeLists.txt;13;add_test;/home/sakura/text/distributed-task-system/tests/CMakeLists.txt;0;")
-add_test([=[ThreadPoolTest]=] "/home/sakura/text/distributed-task-system/build/tests/thread_pool_test")
-set_tests_properties([=[ThreadPoolTest]=] PROPERTIES  _BACKTRACE_TRIPLES "/home/sakura/text/distributed-task-system/tests/CMakeLists.txt;23;add_test;/home/sakura/text/distributed-task-system/tests/CMakeLists.txt;0;")
-add_test([=[TaskExecutorTest]=] "/home/sakura/text/distributed-task-system/build/tests/task_executor_test")
-set_tests_properties([=[TaskExecutorTest]=] PROPERTIES  _BACKTRACE_TRIPLES "/home/sakura/text/distributed-task-system/tests/CMakeLists.txt;36;add_test;/home/sakura/text/distributed-task-system/tests/CMakeLists.txt;0;")
-add_test([=[ApiServerTest]=] "/home/sakura/text/distributed-task-system/build/tests/api_server_test")
-set_tests_properties([=[ApiServerTest]=] PROPERTIES  _BACKTRACE_TRIPLES "/home/sakura/text/distributed-task-system/tests/CMakeLists.txt;52;add_test;/home/sakura/text/distributed-task-system/tests/CMakeLists.txt;0;")
+add_test([=[ApiConnectivityTest]=] "/home/sakura/text/distributed-task-system/build/tests/connectivity_test")
+set_tests_properties([=[ApiConnectivityTest]=] PROPERTIES  _BACKTRACE_TRIPLES "/home/sakura/text/distributed-task-system/tests/CMakeLists.txt;86;add_test;/home/sakura/text/distributed-task-system/tests/CMakeLists.txt;0;")

@@ -1,0 +1,37 @@
+{
+  "job_id": "daily_report_job_123",  
+  "idempotency_key": "user-uuid-key-456", 
+  "tasks": [
+    {
+      "task_id": "T1_fetch_data",
+      "func_name": "http_get",
+      "func_params": {
+        "url": "http://api.example.com/data",
+        "timeout": 5000
+      },
+      "priority": 10,
+      "required": {
+        "cpu_core": 0.5,
+        "mem_mb": 256
+      }
+    },
+    {
+      "task_id": "T2_process_data",
+      "func_name": "data_process_py",
+      "func_params": {
+        "mode": "aggressive"
+      },
+      "priority": 5,
+      "required": {
+        "cpu_core": 2.0,
+        "mem_mb": 1024
+      }
+    }
+  ],
+  "edges": [
+    {
+      "parent": "T1_fetch_data",
+      "child": "T2_process_data"
+    }
+  ]
+}

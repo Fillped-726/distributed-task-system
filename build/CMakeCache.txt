@@ -48,11 +48,18 @@ ABSL_USE_GOOGLETEST_HEAD:BOOL=OFF
 // includes
 ABSL_USE_SYSTEM_INCLUDES:BOOL=OFF
 
+//Build documentation
+BUILD_DOC:BOOL=OFF
+
 //Builds the googlemock subproject
 BUILD_GMOCK:BOOL=ON
 
-//Build shared libraries
+//Build the library as a shared library instead of static. Has
+// no effect if using header-only.
 BUILD_SHARED_LIBS:BOOL=OFF
+
+//Build all test cases
+BUILD_TEST:BOOL=ON
 
 //Build the testing tree.
 BUILD_TESTING:BOOL=OFF
@@ -75,6 +82,18 @@ BoringSSL_IS_TOP_LEVEL:STATIC=OFF
 
 //Value Computed by CMake
 BoringSSL_SOURCE_DIR:STATIC=/home/sakura/text/distributed-task-system/build/_deps/grpc-src/third_party/boringssl-with-bazel
+
+//The path to Brotli's include directory.
+Brotli_INCLUDE_DIR:PATH=Brotli_INCLUDE_DIR-NOTFOUND
+
+//Path to a library.
+Brotli_common:FILEPATH=Brotli_common-NOTFOUND
+
+//Path to a library.
+Brotli_decoder:FILEPATH=Brotli_decoder-NOTFOUND
+
+//Path to a library.
+Brotli_encoder:FILEPATH=Brotli_encoder-NOTFOUND
 
 //Build and run container tests (implies CARES_BUILD_TESTS, Linux
 // only)
@@ -140,7 +159,10 @@ CMAKE_BACKWARDS_COMPATIBILITY:STRING=2.4
 
 //Choose the type of build, options are: None Debug Release RelWithDebInfo
 // MinSizeRel ...
-CMAKE_BUILD_TYPE:STRING=Debug
+CMAKE_BUILD_TYPE:STRING=
+
+//Enable/Disable color output during build.
+CMAKE_COLOR_MAKEFILE:BOOL=ON
 
 //CXX compiler
 CMAKE_CXX_COMPILER:FILEPATH=/usr/bin/c++
@@ -272,8 +294,8 @@ CMAKE_INSTALL_SYSCONFDIR:PATH=etc
 //Path to a program.
 CMAKE_LINKER:FILEPATH=/usr/bin/ld
 
-//Program used to build from build.ninja files.
-CMAKE_MAKE_PROGRAM:FILEPATH=/usr/bin/ninja
+//Path to a program.
+CMAKE_MAKE_PROGRAM:FILEPATH=/usr/bin/gmake
 
 //Flags used by the linker during the creation of modules during
 // all build types.
@@ -394,7 +416,7 @@ CMAKE_TAPI:FILEPATH=CMAKE_TAPI-NOTFOUND
 CMAKE_VERBOSE_MAKEFILE:BOOL=FALSE
 
 //enable AddressSanitizer
-COMMON_ENABLE_ASAN:BOOL=ON
+COMMON_ENABLE_ASAN:BOOL=OFF
 
 //enable clang-tidy
 COMMON_ENABLE_TIDY:BOOL=OFF
@@ -537,6 +559,14 @@ FETCHCONTENT_SOURCE_DIR_GRPC:PATH=
 // for hiredis
 FETCHCONTENT_SOURCE_DIR_HIREDIS:PATH=
 
+//When not empty, overrides where to find pre-populated content
+// for httplib
+FETCHCONTENT_SOURCE_DIR_HTTPLIB:PATH=
+
+//When not empty, overrides where to find pre-populated content
+// for libpqxx
+FETCHCONTENT_SOURCE_DIR_LIBPQXX:PATH=
+
 //Enables UPDATE_DISCONNECTED behavior for all content population
 FETCHCONTENT_UPDATES_DISCONNECTED:BOOL=OFF
 
@@ -552,13 +582,17 @@ FETCHCONTENT_UPDATES_DISCONNECTED_GRPC:BOOL=OFF
 //Enables UPDATE_DISCONNECTED behavior just for population of hiredis
 FETCHCONTENT_UPDATES_DISCONNECTED_HIREDIS:BOOL=OFF
 
+//Enables UPDATE_DISCONNECTED behavior just for population of httplib
+FETCHCONTENT_UPDATES_DISCONNECTED_HTTPLIB:BOOL=OFF
+
+//Enables UPDATE_DISCONNECTED behavior just for population of libpqxx
+FETCHCONTENT_UPDATES_DISCONNECTED_LIBPQXX:BOOL=OFF
+
 //Path to a program.
 GITCOMMAND:FILEPATH=/usr/bin/git
 
 //Git command line client
 GIT_EXECUTABLE:FILEPATH=/usr/bin/git
-
-GRPC_CLI_EXEC:FILEPATH=/home/sakura/text/distributed-task-system/build/grpc_cli/grpc_cli
 
 //Use Abseil and RE2. Requires Abseil and RE2 to be separately
 // added to the build.
@@ -566,6 +600,40 @@ GTEST_HAS_ABSL:BOOL=OFF
 
 //The directory containing a CMake configuration file for GTest.
 GTest_DIR:PATH=GTest_DIR-NOTFOUND
+
+//If ON, uses a Python script to split the header into a compilable
+// header & source file (requires Python v3).
+HTTPLIB_COMPILE:BOOL=OFF
+
+//Enables the installation target
+HTTPLIB_INSTALL:BOOL=ON
+
+//Disable the use of C++ exceptions
+HTTPLIB_NO_EXCEPTIONS:BOOL=OFF
+
+//Requires Brotli to be found & linked, or fails build.
+HTTPLIB_REQUIRE_BROTLI:BOOL=OFF
+
+//Requires OpenSSL to be found & linked, or fails build.
+HTTPLIB_REQUIRE_OPENSSL:BOOL=OFF
+
+//Requires ZLIB to be found & linked, or fails build.
+HTTPLIB_REQUIRE_ZLIB:BOOL=OFF
+
+//Enables testing and builds tests
+HTTPLIB_TEST:BOOL=OFF
+
+//Uses Brotli (if available) to enable Brotli decompression support.
+HTTPLIB_USE_BROTLI_IF_AVAILABLE:BOOL=ON
+
+//Enable feature to load system certs from the Apple Keychain.
+HTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN:BOOL=ON
+
+//Uses OpenSSL (if available) to enable HTTPS support.
+HTTPLIB_USE_OPENSSL_IF_AVAILABLE:BOOL=ON
+
+//Uses ZLIB (if available) to enable Zlib compression support.
+HTTPLIB_USE_ZLIB_IF_AVAILABLE:BOOL=ON
 
 //Installation directory for executables
 INSTALL_BIN_DIR:PATH=/usr/local/bin
@@ -601,6 +669,15 @@ MEMORYCHECK_COMMAND:FILEPATH=/usr/bin/valgrind
 //File that contains suppressions for the memory checker
 MEMORYCHECK_SUPPRESSIONS_FILE:FILEPATH=
 
+//Path to a library.
+OPENSSL_CRYPTO_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libcrypto.so
+
+//Path to a file.
+OPENSSL_INCLUDE_DIR:PATH=/usr/include
+
+//Path to a library.
+OPENSSL_SSL_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libssl.so
+
 //Arguments to supply to pkg-config
 PKG_CONFIG_ARGN:STRING=
 
@@ -609,6 +686,24 @@ PKG_CONFIG_EXECUTABLE:FILEPATH=/usr/bin/pkg-config
 
 //Print file offsets in traces instead of symbolizing
 PRINT_UNSYMBOLIZED_STACK_TRACES:BOOL=OFF
+
+//The Set the PostgreSQL_INCLUDE_DIR cmake cache entry to the top-level
+// directory containing the PostgreSQL include directories. E.g
+// /usr/local/include/PostgreSQL/8.4 or C:/Program Files/PostgreSQL/8.4/include
+PostgreSQL_INCLUDE_DIR:PATH=/usr/include/postgresql
+
+//The Set the PostgreSQL_LIBRARY_DIR cmake cache entry to the top-level
+// directory containing the PostgreSQL libraries.
+PostgreSQL_LIBRARY_DEBUG:FILEPATH=PostgreSQL_LIBRARY_DEBUG-NOTFOUND
+
+//The Set the PostgreSQL_LIBRARY_DIR cmake cache entry to the top-level
+// directory containing the PostgreSQL libraries.
+PostgreSQL_LIBRARY_RELEASE:FILEPATH=/usr/lib/x86_64-linux-gnu/libpq.so
+
+//The Set the PostgreSQL_INCLUDE_DIR cmake cache entry to the top-level
+// directory containing the PostgreSQL include directories. E.g
+// /usr/local/include/PostgreSQL/8.4 or C:/Program Files/PostgreSQL/8.4/include
+PostgreSQL_TYPE_INCLUDE_DIR:PATH=/usr/include/postgresql/16/server
 
 //Value Computed by CMake
 RE2_BINARY_DIR:STATIC=/home/sakura/text/distributed-task-system/build/_deps/grpc-build/third_party/re2
@@ -1108,8 +1203,35 @@ hiredis_SOURCE_DIR:STATIC=/home/sakura/text/distributed-task-system/build/_deps/
 //Name of the exported target
 hiredis_export_name:STRING=hiredis
 
+//Value Computed by CMake
+httplib_BINARY_DIR:STATIC=/home/sakura/text/distributed-task-system/build/_deps/httplib-build
+
+//Value Computed by CMake
+httplib_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+httplib_SOURCE_DIR:STATIC=/home/sakura/text/distributed-task-system/build/_deps/httplib-src
+
+//Value Computed by CMake
+libpqxx_BINARY_DIR:STATIC=/home/sakura/text/distributed-task-system/build/_deps/libpqxx-build
+
+//Value Computed by CMake
+libpqxx_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+libpqxx_SOURCE_DIR:STATIC=/home/sakura/text/distributed-task-system/build/_deps/libpqxx-src
+
 //The directory containing a CMake configuration file for nlohmann_json.
 nlohmann_json_DIR:PATH=/usr/share/cmake/nlohmann_json
+
+//Path to a library.
+pkgcfg_lib__OPENSSL_crypto:FILEPATH=/usr/lib/x86_64-linux-gnu/libcrypto.so
+
+//Path to a library.
+pkgcfg_lib__OPENSSL_ssl:FILEPATH=/usr/lib/x86_64-linux-gnu/libssl.so
+
+//Dependencies for the target
+pqxx_LIB_DEPENDS:STATIC=general;/usr/lib/x86_64-linux-gnu/libpq.so;
 
 //Provider of absl library
 protobuf_ABSL_PROVIDER:STRING=module
@@ -1240,6 +1362,89 @@ zlib_SOURCE_DIR:STATIC=/home/sakura/text/distributed-task-system/build/_deps/grp
 ABSL_INTERNAL_AT_LEAST_CXX17:INTERNAL=1
 //ADVANCED property for variable: Boost_DIR
 Boost_DIR-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: Brotli_INCLUDE_DIR
+Brotli_INCLUDE_DIR-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: Brotli_common
+Brotli_common-ADVANCED:INTERNAL=1
+Brotli_common_CFLAGS:INTERNAL=
+Brotli_common_CFLAGS_I:INTERNAL=
+Brotli_common_CFLAGS_OTHER:INTERNAL=
+Brotli_common_FOUND:INTERNAL=
+Brotli_common_INCLUDEDIR:INTERNAL=
+Brotli_common_LIBDIR:INTERNAL=
+Brotli_common_LIBS:INTERNAL=
+Brotli_common_LIBS_L:INTERNAL=
+Brotli_common_LIBS_OTHER:INTERNAL=
+Brotli_common_LIBS_PATHS:INTERNAL=
+Brotli_common_MODULE_NAME:INTERNAL=
+Brotli_common_PREFIX:INTERNAL=
+Brotli_common_STATIC_CFLAGS:INTERNAL=
+Brotli_common_STATIC_CFLAGS_I:INTERNAL=
+Brotli_common_STATIC_CFLAGS_OTHER:INTERNAL=
+Brotli_common_STATIC_LIBDIR:INTERNAL=
+Brotli_common_STATIC_LIBS:INTERNAL=
+Brotli_common_STATIC_LIBS_L:INTERNAL=
+Brotli_common_STATIC_LIBS_OTHER:INTERNAL=
+Brotli_common_STATIC_LIBS_PATHS:INTERNAL=
+Brotli_common_VERSION:INTERNAL=
+Brotli_common_libbrotlicommon_INCLUDEDIR:INTERNAL=
+Brotli_common_libbrotlicommon_LIBDIR:INTERNAL=
+Brotli_common_libbrotlicommon_PREFIX:INTERNAL=
+Brotli_common_libbrotlicommon_VERSION:INTERNAL=
+//ADVANCED property for variable: Brotli_decoder
+Brotli_decoder-ADVANCED:INTERNAL=1
+Brotli_decoder_CFLAGS:INTERNAL=
+Brotli_decoder_CFLAGS_I:INTERNAL=
+Brotli_decoder_CFLAGS_OTHER:INTERNAL=
+Brotli_decoder_FOUND:INTERNAL=
+Brotli_decoder_INCLUDEDIR:INTERNAL=
+Brotli_decoder_LIBDIR:INTERNAL=
+Brotli_decoder_LIBS:INTERNAL=
+Brotli_decoder_LIBS_L:INTERNAL=
+Brotli_decoder_LIBS_OTHER:INTERNAL=
+Brotli_decoder_LIBS_PATHS:INTERNAL=
+Brotli_decoder_MODULE_NAME:INTERNAL=
+Brotli_decoder_PREFIX:INTERNAL=
+Brotli_decoder_STATIC_CFLAGS:INTERNAL=
+Brotli_decoder_STATIC_CFLAGS_I:INTERNAL=
+Brotli_decoder_STATIC_CFLAGS_OTHER:INTERNAL=
+Brotli_decoder_STATIC_LIBDIR:INTERNAL=
+Brotli_decoder_STATIC_LIBS:INTERNAL=
+Brotli_decoder_STATIC_LIBS_L:INTERNAL=
+Brotli_decoder_STATIC_LIBS_OTHER:INTERNAL=
+Brotli_decoder_STATIC_LIBS_PATHS:INTERNAL=
+Brotli_decoder_VERSION:INTERNAL=
+Brotli_decoder_libbrotlidec_INCLUDEDIR:INTERNAL=
+Brotli_decoder_libbrotlidec_LIBDIR:INTERNAL=
+Brotli_decoder_libbrotlidec_PREFIX:INTERNAL=
+Brotli_decoder_libbrotlidec_VERSION:INTERNAL=
+//ADVANCED property for variable: Brotli_encoder
+Brotli_encoder-ADVANCED:INTERNAL=1
+Brotli_encoder_CFLAGS:INTERNAL=
+Brotli_encoder_CFLAGS_I:INTERNAL=
+Brotli_encoder_CFLAGS_OTHER:INTERNAL=
+Brotli_encoder_FOUND:INTERNAL=
+Brotli_encoder_INCLUDEDIR:INTERNAL=
+Brotli_encoder_LIBDIR:INTERNAL=
+Brotli_encoder_LIBS:INTERNAL=
+Brotli_encoder_LIBS_L:INTERNAL=
+Brotli_encoder_LIBS_OTHER:INTERNAL=
+Brotli_encoder_LIBS_PATHS:INTERNAL=
+Brotli_encoder_MODULE_NAME:INTERNAL=
+Brotli_encoder_PREFIX:INTERNAL=
+Brotli_encoder_STATIC_CFLAGS:INTERNAL=
+Brotli_encoder_STATIC_CFLAGS_I:INTERNAL=
+Brotli_encoder_STATIC_CFLAGS_OTHER:INTERNAL=
+Brotli_encoder_STATIC_LIBDIR:INTERNAL=
+Brotli_encoder_STATIC_LIBS:INTERNAL=
+Brotli_encoder_STATIC_LIBS_L:INTERNAL=
+Brotli_encoder_STATIC_LIBS_OTHER:INTERNAL=
+Brotli_encoder_STATIC_LIBS_PATHS:INTERNAL=
+Brotli_encoder_VERSION:INTERNAL=
+Brotli_encoder_libbrotlienc_INCLUDEDIR:INTERNAL=
+Brotli_encoder_libbrotlienc_LIBDIR:INTERNAL=
+Brotli_encoder_libbrotlienc_PREFIX:INTERNAL=
+Brotli_encoder_libbrotlienc_VERSION:INTERNAL=
 //CARES LIBRARY FOUND
 CARES_FOUND:INTERNAL=1
 //CARES LIBRARIES
@@ -1273,6 +1478,8 @@ CMAKE_CACHE_MAJOR_VERSION:INTERNAL=3
 CMAKE_CACHE_MINOR_VERSION:INTERNAL=28
 //Patch version of cmake used to create the current loaded cache
 CMAKE_CACHE_PATCH_VERSION:INTERNAL=3
+//ADVANCED property for variable: CMAKE_COLOR_MAKEFILE
+CMAKE_COLOR_MAKEFILE-ADVANCED:INTERNAL=1
 //Path to CMake executable.
 CMAKE_COMMAND:INTERNAL=/usr/bin/cmake
 //Path to cpack program executable.
@@ -1330,7 +1537,7 @@ CMAKE_EXPORT_COMPILE_COMMANDS-ADVANCED:INTERNAL=1
 //Name of external makefile project generator.
 CMAKE_EXTRA_GENERATOR:INTERNAL=
 //Name of generator.
-CMAKE_GENERATOR:INTERNAL=Ninja
+CMAKE_GENERATOR:INTERNAL=Unix Makefiles
 //Generator instance identifier.
 CMAKE_GENERATOR_INSTANCE:INTERNAL=
 //Name of generator platform.
@@ -1393,7 +1600,7 @@ CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_NM
 CMAKE_NM-ADVANCED:INTERNAL=1
 //number of local generators
-CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=45
+CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=52
 //ADVANCED property for variable: CMAKE_OBJCOPY
 CMAKE_OBJCOPY-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_OBJDUMP
@@ -1492,6 +1699,8 @@ DART_TESTING_TIMEOUT-ADVANCED:INTERNAL=1
 FIND_PACKAGE_MESSAGE_DETAILS_Boost:INTERNAL=[/usr/lib/x86_64-linux-gnu/cmake/Boost-1.83.0/BoostConfig.cmake][cfound components: system filesystem ][v1.83.0(1.80)]
 //Details about finding PkgConfig
 FIND_PACKAGE_MESSAGE_DETAILS_PkgConfig:INTERNAL=[/usr/bin/pkg-config][v1.8.1()]
+//Details about finding PostgreSQL
+FIND_PACKAGE_MESSAGE_DETAILS_PostgreSQL:INTERNAL=[/usr/lib/x86_64-linux-gnu/libpq.so][/usr/include/postgresql][c ][v16.10()]
 //Details about finding Threads
 FIND_PACKAGE_MESSAGE_DETAILS_Threads:INTERNAL=[TRUE][v()]
 //Details about finding nlohmann_json
@@ -1808,10 +2017,64 @@ MEMORYCHECK_COMMAND-ADVANCED:INTERNAL=1
 MEMORYCHECK_SUPPRESSIONS_FILE-ADVANCED:INTERNAL=1
 //CHECK_TYPE_SIZE: sizeof(off64_t)
 OFF64_T:INTERNAL=8
+//ADVANCED property for variable: OPENSSL_CRYPTO_LIBRARY
+OPENSSL_CRYPTO_LIBRARY-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: OPENSSL_INCLUDE_DIR
+OPENSSL_INCLUDE_DIR-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: OPENSSL_SSL_LIBRARY
+OPENSSL_SSL_LIBRARY-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: PKG_CONFIG_ARGN
 PKG_CONFIG_ARGN-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: PKG_CONFIG_EXECUTABLE
 PKG_CONFIG_EXECUTABLE-ADVANCED:INTERNAL=1
+//Result of TRY_COMPILE
+PQXX_HAVE_CHARCONV_FLOAT:INTERNAL=TRUE
+//Result of TRY_COMPILE
+PQXX_HAVE_CHARCONV_INT:INTERNAL=TRUE
+//Result of TRY_COMPILE
+PQXX_HAVE_CMP:INTERNAL=TRUE
+//Result of TRY_COMPILE
+PQXX_HAVE_CONCEPTS:INTERNAL=TRUE
+//Result of TRY_COMPILE
+PQXX_HAVE_CXA_DEMANGLE:INTERNAL=TRUE
+//Result of TRY_COMPILE
+PQXX_HAVE_GCC_PURE:INTERNAL=TRUE
+//Result of TRY_COMPILE
+PQXX_HAVE_GCC_VISIBILITY:INTERNAL=TRUE
+//Result of TRY_COMPILE
+PQXX_HAVE_LIKELY:INTERNAL=TRUE
+//Result of TRY_COMPILE
+PQXX_HAVE_MULTIDIM:INTERNAL=FALSE
+//Result of TRY_COMPILE
+PQXX_HAVE_PATH:INTERNAL=TRUE
+//Result of TRY_COMPILE
+PQXX_HAVE_POLL:INTERNAL=TRUE
+//Result of TRY_COMPILE
+PQXX_HAVE_SLEEP_FOR:INTERNAL=TRUE
+//Result of TRY_COMPILE
+PQXX_HAVE_SOURCE_LOCATION:INTERNAL=TRUE
+//Result of TRY_COMPILE
+PQXX_HAVE_SPAN:INTERNAL=TRUE
+//Result of TRY_COMPILE
+PQXX_HAVE_SSIZE:INTERNAL=TRUE
+//Result of TRY_COMPILE
+PQXX_HAVE_STRERROR_R:INTERNAL=TRUE
+//Result of TRY_COMPILE
+PQXX_HAVE_STRERROR_S:INTERNAL=FALSE
+//Result of TRY_COMPILE
+PQXX_HAVE_THREAD_LOCAL:INTERNAL=TRUE
+//Result of TRY_COMPILE
+PQXX_HAVE_UNREACHABLE:INTERNAL=FALSE
+//Result of TRY_COMPILE
+PQXX_HAVE_YEAR_MONTH_DAY:INTERNAL=TRUE
+//ADVANCED property for variable: PostgreSQL_INCLUDE_DIR
+PostgreSQL_INCLUDE_DIR-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: PostgreSQL_LIBRARY_DEBUG
+PostgreSQL_LIBRARY_DEBUG-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: PostgreSQL_LIBRARY_RELEASE
+PostgreSQL_LIBRARY_RELEASE-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: PostgreSQL_TYPE_INCLUDE_DIR
+PostgreSQL_TYPE_INCLUDE_DIR-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: SITE
 SITE-ADVANCED:INTERNAL=1
 //Test STL_NO_NAMESPACE
@@ -1857,7 +2120,47 @@ _CARES_FUNC_IN_LIB_GLOBAL_socket:INTERNAL=1
 _CMAKE_LINKER_PUSHPOP_STATE_SUPPORTED:INTERNAL=TRUE
 //CMAKE_INSTALL_PREFIX during last run
 _GNUInstallDirs_LAST_CMAKE_INSTALL_PREFIX:INTERNAL=/usr/local
+_OPENSSL_CFLAGS:INTERNAL=-I/usr/include
+_OPENSSL_CFLAGS_I:INTERNAL=
+_OPENSSL_CFLAGS_OTHER:INTERNAL=
+_OPENSSL_FOUND:INTERNAL=1
+_OPENSSL_INCLUDEDIR:INTERNAL=/usr/include
+_OPENSSL_INCLUDE_DIRS:INTERNAL=/usr/include
+_OPENSSL_LDFLAGS:INTERNAL=-L/usr/lib/x86_64-linux-gnu;-lssl;-lcrypto
+_OPENSSL_LDFLAGS_OTHER:INTERNAL=
+_OPENSSL_LIBDIR:INTERNAL=/usr/lib/x86_64-linux-gnu
+_OPENSSL_LIBRARIES:INTERNAL=ssl;crypto
+_OPENSSL_LIBRARY_DIRS:INTERNAL=/usr/lib/x86_64-linux-gnu
+_OPENSSL_LIBS:INTERNAL=
+_OPENSSL_LIBS_L:INTERNAL=
+_OPENSSL_LIBS_OTHER:INTERNAL=
+_OPENSSL_LIBS_PATHS:INTERNAL=
+_OPENSSL_MODULE_NAME:INTERNAL=openssl
+_OPENSSL_PREFIX:INTERNAL=/usr
+_OPENSSL_STATIC_CFLAGS:INTERNAL=-I/usr/include
+_OPENSSL_STATIC_CFLAGS_I:INTERNAL=
+_OPENSSL_STATIC_CFLAGS_OTHER:INTERNAL=
+_OPENSSL_STATIC_INCLUDE_DIRS:INTERNAL=/usr/include
+_OPENSSL_STATIC_LDFLAGS:INTERNAL=-L/usr/lib/x86_64-linux-gnu;-lssl;-L/usr/lib/x86_64-linux-gnu;-ldl;-pthread;-lcrypto;-ldl;-pthread
+_OPENSSL_STATIC_LDFLAGS_OTHER:INTERNAL=-pthread;-pthread
+_OPENSSL_STATIC_LIBDIR:INTERNAL=
+_OPENSSL_STATIC_LIBRARIES:INTERNAL=ssl;dl;crypto;dl
+_OPENSSL_STATIC_LIBRARY_DIRS:INTERNAL=/usr/lib/x86_64-linux-gnu;/usr/lib/x86_64-linux-gnu
+_OPENSSL_STATIC_LIBS:INTERNAL=
+_OPENSSL_STATIC_LIBS_L:INTERNAL=
+_OPENSSL_STATIC_LIBS_OTHER:INTERNAL=
+_OPENSSL_STATIC_LIBS_PATHS:INTERNAL=
+_OPENSSL_VERSION:INTERNAL=3.0.13
+_OPENSSL_openssl_INCLUDEDIR:INTERNAL=
+_OPENSSL_openssl_LIBDIR:INTERNAL=
+_OPENSSL_openssl_PREFIX:INTERNAL=
+_OPENSSL_openssl_VERSION:INTERNAL=
+__pkg_config_arguments__OPENSSL:INTERNAL=QUIET;openssl
+__pkg_config_checked_Brotli_common:INTERNAL=1
+__pkg_config_checked_Brotli_decoder:INTERNAL=1
+__pkg_config_checked_Brotli_encoder:INTERNAL=1
 __pkg_config_checked_SYSTEMD:INTERNAL=1
+__pkg_config_checked__OPENSSL:INTERNAL=1
 //ADVANCED property for variable: boost_atomic_DIR
 boost_atomic_DIR-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: boost_filesystem_DIR
@@ -1892,6 +2195,13 @@ gtest_disable_pthreads-ADVANCED:INTERNAL=1
 gtest_force_shared_crt-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: gtest_hide_internal_symbols
 gtest_hide_internal_symbols-ADVANCED:INTERNAL=1
+//Result of TRY_COMPILE
+no_need_fslib:INTERNAL=TRUE
+//ADVANCED property for variable: pkgcfg_lib__OPENSSL_crypto
+pkgcfg_lib__OPENSSL_crypto-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: pkgcfg_lib__OPENSSL_ssl
+pkgcfg_lib__OPENSSL_ssl-ADVANCED:INTERNAL=1
+prefix_result:INTERNAL=/usr/lib/x86_64-linux-gnu
 //STRINGS property for variable: protobuf_ABSL_PROVIDER
 protobuf_ABSL_PROVIDER-STRINGS:INTERNAL=module;package
 //ADVANCED property for variable: protobuf_DEBUG_POSTFIX

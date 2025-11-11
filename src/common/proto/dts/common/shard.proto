@@ -1,0 +1,7 @@
+syntax = "proto3";
+package dts.common;
+
+message Shard {
+  uint32 shard_id     = 1;
+  uint32 total_shards = 2;
+}

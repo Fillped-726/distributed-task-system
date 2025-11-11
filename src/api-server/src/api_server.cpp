@@ -1,23 +1,30 @@
 #include "api_server.hpp"
 #include <iostream>
 
-namespace dts {
 
 /* ---------- AsyncCallContext 实现 ---------- */
 template <typename S, typename Rq, typename Rp>
 void AsyncCallContext<S, Rq, Rp>::RequestNext() {
     status_ = CallStatus::CREATE;
-    service_->RequestSubmitTask(&ctx_, &request_, &responder_, cq_, cq_, this);
+    service_->RequestSubmitDag(&ctx_, &request_, &responder_, cq_, cq_, this);
 }
 
 /* 显式实例化（防止模板多次定义） */
-template class AsyncCallContext<AsyncTaskService, Task, TaskResponse>;
+template class AsyncCallContext<AsyncTaskService, PbSubmitDagRequest, PbSubmitDagResponse>;
 
 /* ---------- AsyncServer 实现 ---------- */
-AsyncServer::AsyncServer() = default;
+AsyncServer::AsyncServer(std::shared_ptr<PostgresConnection> db_conn)
+    : db_conn_(std::move(db_conn)) // <-- 保存传入的连接
+{
+}
 AsyncServer::~AsyncServer() { Shutdown(); }
 
 void AsyncServer::Run(uint16_t port) {
+
+    if (!submit_task_) {
+        LOG(FATAL) << "Server config error: 'submit_task_' handler is missing. Server cannot start.";
+    }
+    
     std::string addr = port ? "0.0.0.0:" + std::to_string(port) : "0.0.0.0:0";
     grpc::ServerBuilder builder;
     builder.AddListeningPort(addr, grpc::InsecureServerCredentials(), &listen_port_);
@@ -37,9 +44,9 @@ void AsyncServer::Run(uint16_t port) {
 
     for (int i = 0; i < c; ++i) {
         auto* cq = cqs_[i % cq_count].get();
-        new AsyncCallContext<AsyncTaskService, Task, TaskResponse>(
+        new AsyncCallContext<AsyncTaskService, PbSubmitDagRequest, PbSubmitDagResponse>(
             &service_, cq,
-            [this](auto* ctx) { OnSubmitTask(ctx); });
+            [this](auto* ctx) { OnSubmitDag(ctx); });
     }
 
     cq_threads_.reserve(cq_count);
@@ -64,19 +71,15 @@ void AsyncServer::DriveCompletionQueue(grpc::ServerCompletionQueue* cq) {
     while (true) {
         // 被 Shutdown() 唤醒后返回 false
         if (!cq->Next(&tag, &ok)) break;
-        if (tag) static_cast<AsyncCallContext<AsyncTaskService,Task,TaskResponse>*>(tag)->Proceed(ok);
+        if (tag) static_cast<AsyncCallContext<AsyncTaskService,PbSubmitDagRequest,PbSubmitDagResponse>*>(tag)->Proceed(ok);
     }
     // 排空剩余事件
     while (cq->Next(&tag, &ok)) {
-        if (tag) static_cast<AsyncCallContext<AsyncTaskService,Task,TaskResponse>*>(tag)->Proceed(ok);
+        if (tag) static_cast<AsyncCallContext<AsyncTaskService,PbSubmitDagRequest,PbSubmitDagResponse>*>(tag)->Proceed(ok);
     }
 }
 
 /* ---------- 业务逻辑 = 普通函数 ---------- */
-void AsyncServer::OnSubmitTask(AsyncCallContext<AsyncTaskService, Task, TaskResponse>* ctx) {
-    // 用户注册的高性能回调（无状态机噪音）
-    ctx->response_.mutable_task()->CopyFrom(ctx->request_);
-    ctx->response_.mutable_task()->set_state(dts::proto::SUCCESS);
+void AsyncServer::OnSubmitDag(AsyncCallContext<AsyncTaskService, PbSubmitDagRequest, PbSubmitDagResponse>* ctx) {
+      submit_task_(db_conn_, &ctx->request_, &ctx->response_);
 }
-
-} // namespace dts

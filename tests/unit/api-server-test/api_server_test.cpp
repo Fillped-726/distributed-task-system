@@ -12,11 +12,15 @@ protected:
     static void SetUpTestSuite() {
         LOG(INFO) << "[TestSuite] Starting AsyncServer ...";
         server_ = std::make_unique<AsyncServer>();
-        server_->SetSubmitTaskHandler([](Task* req, TaskResponse* resp) {
-            resp->mutable_task()->CopyFrom(*req);
-            resp->mutable_task()->set_state(dts::proto::SUCCESS);
-            VLOG(1) << "[Handler] task_id=" << req->task_id(); // 只有 -v=1 才可见
-        });
+        
+        // [FIX 1] 修正 Handler 的签名和实现
+        server_->SetSubmitTaskHandler(
+            [](dts::service::SubmitTaskRequest* req, SubmitTaskResponse* resp) {
+                resp->mutable_task()->CopyFrom(req->task());
+                resp->mutable_task()->set_state(dts::task::SUCCESS);
+                VLOG(1) << "[Handler] task_id=" << req->task().task_id(); // 只有 -v=1 才可见
+            });
+            
         server_->Run(0);
         channel_ = grpc::CreateChannel(
             "127.0.0.1:" + std::to_string(server_->ListenPort()),
@@ -53,25 +57,39 @@ TEST_F(AsyncServerTest, SubmitTaskEchoAndSuccess) {
     std::string req_id = NextReqId();
     LOG(INFO) << "[TEST] EchoAndSuccess req_id=" << req_id;
 
-    Task req;
-    req.set_task_id(req_id);
-    TaskResponse resp;
+    // [FIX 2] 创建 Task 并将其放入 Request 包装器
+    Task task_data;
+    task_data.set_task_id(req_id);
+    
+    SubmitTaskRequest req;
+    req.mutable_task()->CopyFrom(task_data);
+
+    SubmitTaskResponse resp;
     grpc::ClientContext ctx;
-    grpc::Status st = stub_->SubmitTask(&ctx, req, &resp);
+    grpc::Status st = stub_->SubmitTask(&ctx, req, &resp); // 传递包装器 req
+    
     ASSERT_TRUE(st.ok()) << st.error_message();
     EXPECT_EQ(resp.task().task_id(), req_id);
-    EXPECT_EQ(resp.task().state(), dts::proto::SUCCESS);
+    
+    // [FIX 3] 修正枚举命名空间
+    EXPECT_EQ(resp.task().state(), dts::task::SUCCESS);
 }
 
 /* ---------- 预留扩展：异常、并发、流式 ---------- */
 TEST_F(AsyncServerTest, SubmitTaskTimeout) {
-    Task req;
-    req.set_task_id("timeout");
-    TaskResponse resp;
+    // [FIX 2] 创建 Task 并将其放入 Request 包装器
+    Task task_data;
+    task_data.set_task_id("timeout");
+
+    SubmitTaskRequest req;
+    req.mutable_task()->CopyFrom(task_data);
+    
+    SubmitTaskResponse resp;
     grpc::ClientContext ctx;
     ctx.set_deadline(std::chrono::system_clock::now() +
                      std::chrono::milliseconds(1)); // 极短超时
-    auto st = stub_->SubmitTask(&ctx, req, &resp);
+                     
+    auto st = stub_->SubmitTask(&ctx, req, &resp); // 传递包装器 req
     EXPECT_FALSE(st.ok());
     EXPECT_EQ(st.error_code(), grpc::StatusCode::DEADLINE_EXCEEDED);
 }
@@ -83,12 +101,20 @@ TEST_F(AsyncServerTest, ConcurrentSubmit) {
     auto worker = [&](int tid) {
         for (int i = 0; i < kReqPerThread; ++i) {
             std::string req_id = NextReqId();
-            Task req;
-            req.set_task_id(req_id);
-            TaskResponse resp;
+            
+            // [FIX 2] 创建 Task 并将其放入 Request 包装器
+            Task task_data;
+            task_data.set_task_id(req_id);
+
+            SubmitTaskRequest req;
+            req.mutable_task()->CopyFrom(task_data);
+            
+            SubmitTaskResponse resp;
             grpc::ClientContext ctx;
+            
+            // [FIX 3] 修正枚举命名空间
             if (stub_->SubmitTask(&ctx, req, &resp).ok() &&
-                resp.task().state() == dts::proto::SUCCESS) {
+                resp.task().state() == dts::task::SUCCESS) {
                 ok_count++;
             } else {
                 LOG(ERROR) << "[Concurrent] failed req_id=" << req_id;
