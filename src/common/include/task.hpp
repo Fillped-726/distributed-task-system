@@ -9,7 +9,7 @@
 
 namespace dts {
 enum class TaskState : std::int8_t {
-    WAITING_DEPS = -1, PENDING = 0, RUNNING = 1, SUCCESS = 2, FAILED = 3, TIMEOUT = 4, CANCELLED = 5
+    PENDING = 0, RUNNING = 1, SUCCESS = 2, FAILED = 3, TIMEOUT = 4, CANCELLED = 5, WAITING_DEPS = 6
 };
 
 struct Resource {
@@ -25,14 +25,13 @@ struct Shard {
 };
 
 struct Task {
+    std::string job_id;
     std::string task_id;
+    std::string natural_id;
     std::string client_id;
     std::uint32_t priority = 0;
     TaskState state = TaskState::PENDING;
-
-    std::shared_ptr<std::atomic<bool>> cancelled =
-        std::make_shared<std::atomic<bool>>(false);
-
+    int pending_dependencies = 0;
     std::string func_name;
     nlohmann::json func_params;
     Resource required;

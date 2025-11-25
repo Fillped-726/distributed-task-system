@@ -38,6 +38,7 @@ target_link_libraries(api_server_lib
         grpc++
         glog::glog
         Boost::system
+        Boost::uuid
         Boost::filesystem
         nlohmann_json::nlohmann_json
         pqxx

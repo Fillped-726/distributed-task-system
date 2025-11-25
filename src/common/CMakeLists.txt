@@ -58,6 +58,11 @@ endfunction()
 set(_ALL_PROTO_SRCS)
 set(_ALL_PROTO_HDRS)
 # ---- 4. 逐个 proto 建立 target ----
+dts_proto_target(dts.internal.internal_service   proto/dts/internal/internal_service.proto)
+list(APPEND _ALL_PROTO_SRCS "${PROTO_OUT_ROOT}/dts/internal/internal_service.pb.cc") 
+list(APPEND _ALL_PROTO_SRCS "${PROTO_OUT_ROOT}/dts/internal/internal_service.grpc.pb.cc")
+list(APPEND _ALL_PROTO_HDRS "${PROTO_OUT_ROOT}/dts/internal/internal_service.pb.h")
+
 dts_proto_target(dts.common.resource   proto/dts/common/resource.proto)
 list(APPEND _ALL_PROTO_SRCS "${PROTO_OUT_ROOT}/dts/common/resource.pb.cc") 
 list(APPEND _ALL_PROTO_HDRS "${PROTO_OUT_ROOT}/dts/common/resource.pb.h")
@@ -95,6 +100,7 @@ list(APPEND _ALL_PROTO_HDRS "${PROTO_OUT_ROOT}/dts/service/task_service.grpc.pb.
 # ---- 5. 建立依赖链 ----
 target_link_libraries(dts.task         INTERFACE dts.common.resource dts.task.state)
 target_link_libraries(dts.service.task INTERFACE dts.task)
+target_link_libraries(dts.internal.internal_service INTERFACE dts.task dts.error.error)
 
 # ---- 6. INSTALL / EXPORT （2025 必备） ----
 include(GNUInstallDirs)
@@ -135,6 +141,7 @@ target_link_libraries(common_core
         dts.task.state
         dts.task
         dts.service.task
+        dts.internal.internal_service
     PRIVATE
         protobuf::libprotobuf
         grpc++

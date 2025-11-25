@@ -72,19 +72,39 @@ struct AsyncDagSubmitTag : AsyncTagBase<AsyncDagSubmitTag> {
     void SetResult() {
         std::call_once(once_, [&] {
             if (status.ok()) {
-                // 业务 Header 检查 (可选但推荐)
-                if (response.header().code() != 0) {
-                     status = grpc::Status(grpc::StatusCode::UNKNOWN, 
-                                          "Server rejected: " + response.header().msg());
-                     promise->set_exception(std::make_exception_ptr(GrpcError(status)));
-                     if (callback) callback(response, status); // 即使失败也返回 response
+                // -------------------------------------------------
+                // *** 关键修改在这里 ***
+                // -------------------------------------------------
+                
+                // 业务 Header 检查
+                if (response.header().has_error()) { // <--- 检查 'error' 字段是否存在
+                    
+                    // 获取 error 对象
+                    const auto& err = response.header().error();
+
+                    // (校招亮点：gRPC 状态码应反映业务错误)
+                    // 我们可以根据 err.sys() 的类型来映射 gRPC 状态码
+                    // 比如 SYS_INVALID_PARAM -> grpc::StatusCode::INVALID_ARGUMENT
+                    //     SYS_IDEMPOTENT    -> grpc::StatusCode::ALREADY_EXISTS
+                    // (为了简单, 我们先用 FAILED_PRECONDITION)
+                    
+                    status = grpc::Status(
+                        grpc::StatusCode::FAILED_PRECONDITION, // (或 UNKNOWN)
+                        "Server rejected: " + err.msg() // <--- 从 'error' 对象获取 msg
+                    );
+                    
+                    promise->set_exception(std::make_exception_ptr(GrpcError(status)));
+                    if (callback) callback(response, status); // 即使失败也返回 response
+                
                 } else {
-                     // 成功：不再转换 Task，直接设置 SubmitDagResponse
-                     promise->set_value(response);
-                     if (callback) callback(response, status);
+                    // *** 成功 ***
+                    // (header.has_error() 为 false, 代表业务成功)
+                    promise->set_value(response);
+                    if (callback) callback(response, status);
                 }
+            
             } else {
-                // gRPC 失败
+                // gRPC 失败 (网络层/框架层失败, 逻辑不变)
                 promise->set_exception(std::make_exception_ptr(GrpcError(status)));
                 if (callback) callback(SubmitDagResponse{}, status); // 返回空 response
             }
@@ -95,68 +115,68 @@ private:
     std::once_flag once_;
 };
 
-struct AsyncCancelTag  : AsyncTagBase<AsyncCancelTag> {
-    AsyncCancelTag() = default;
-    void ProceedImpl(bool ok) {
-        if (step_ == kLaunch && ok) {
-            step_ = kFinish;
-            reader->Finish(&response, &status, this);
-            return;
-        }
-        if (!ok && step_ == kLaunch) status = grpc::Status(grpc::StatusCode::INTERNAL, "cq !ok");
-        promise.set_value(status.ok() && response.success());
-        delete this;
-    }
+// struct AsyncCancelTag  : AsyncTagBase<AsyncCancelTag> {
+//     AsyncCancelTag() = default;
+//     void ProceedImpl(bool ok) {
+//         if (step_ == kLaunch && ok) {
+//             step_ = kFinish;
+//             reader->Finish(&response, &status, this);
+//             return;
+//         }
+//         if (!ok && step_ == kLaunch) status = grpc::Status(grpc::StatusCode::INTERNAL, "cq !ok");
+//         promise.set_value(status.ok() && response.success());
+//         delete this;
+//     }
 
-    enum Step { kLaunch, kFinish } step_{kLaunch};
-    CancelTaskRequest request;
-    CancelTaskResponse response;
-    std::promise<bool> promise;
-    std::unique_ptr<grpc::ClientAsyncResponseReader<CancelTaskResponse>> reader;
-    grpc::ClientContext context;
-};
+//     enum Step { kLaunch, kFinish } step_{kLaunch};
+//     CancelTaskRequest request;
+//     CancelTaskResponse response;
+//     std::promise<bool> promise;
+//     std::unique_ptr<grpc::ClientAsyncResponseReader<CancelTaskResponse>> reader;
+//     grpc::ClientContext context;
+// };
 
-struct AsyncQueryTag   : AsyncTagBase<AsyncQueryTag> {
-    AsyncQueryTag() = default;
-    void ProceedImpl(bool ok) {
-        if (step_ == kLaunch && ok) {
-            step_ = kFinish;
-            reader->Finish(&response, &status, this);
-            return;
-        }
-        if (!ok && step_ == kLaunch) status = grpc::Status(grpc::StatusCode::INTERNAL, "cq !ok");
-        SetResult();
-        delete this;
-    }
+// struct AsyncQueryTag   : AsyncTagBase<AsyncQueryTag> {
+//     AsyncQueryTag() = default;
+//     void ProceedImpl(bool ok) {
+//         if (step_ == kLaunch && ok) {
+//             step_ = kFinish;
+//             reader->Finish(&response, &status, this);
+//             return;
+//         }
+//         if (!ok && step_ == kLaunch) status = grpc::Status(grpc::StatusCode::INTERNAL, "cq !ok");
+//         SetResult();
+//         delete this;
+//     }
 
-    enum Step { kLaunch, kFinish } step_{kLaunch};
-    QueryTaskRequest request;
-    QueryTaskResponse response;
-    std::promise<Task> promise;
-    std::unique_ptr<grpc::ClientAsyncResponseReader<QueryTaskResponse>> reader;
-    grpc::ClientContext context;
+//     enum Step { kLaunch, kFinish } step_{kLaunch};
+//     QueryTaskRequest request;
+//     QueryTaskResponse response;
+//     std::promise<Task> promise;
+//     std::unique_ptr<grpc::ClientAsyncResponseReader<QueryTaskResponse>> reader;
+//     grpc::ClientContext context;
 
-    void SetResult() {
-        std::call_once(once_, [&] {
-            if (!status.ok()) {
-                // gRPC 级别的错误 (例如网络不通)
-                promise.set_exception(std::make_exception_ptr(GrpcError(status)));
-            } else if (response.header().code() != 0) {
-                // gRPC 通信成功，但业务逻辑返回错误 (例如 task_id 不存在)
-                promise.set_exception(std::make_exception_ptr(
-                    std::runtime_error("Server Error: " + response.header().msg())
-                ));
-            } else {
-                // 完全成功
-                Task task = TaskFromProto(response.task()); 
-                promise.set_value(std::move(task));          
-            }
-        });
-    }
+//     void SetResult() {
+//         std::call_once(once_, [&] {
+//             if (!status.ok()) {
+//                 // gRPC 级别的错误 (例如网络不通)
+//                 promise.set_exception(std::make_exception_ptr(GrpcError(status)));
+//             } else if (response.header().code() != 0) {
+//                 // gRPC 通信成功，但业务逻辑返回错误 (例如 task_id 不存在)
+//                 promise.set_exception(std::make_exception_ptr(
+//                     std::runtime_error("Server Error: " + response.header().msg())
+//                 ));
+//             } else {
+//                 // 完全成功
+//                 Task task = TaskFromProto(response.task()); 
+//                 promise.set_value(std::move(task));          
+//             }
+//         });
+//     }
 
-private:
-    std::once_flag once_;
-};
+// private:
+//     std::once_flag once_;
+// };
 
 //todo，待完善
 // struct AsyncListenTag : AsyncTagBase<AsyncListenTag> {

@@ -48,6 +48,9 @@ ABSL_USE_GOOGLETEST_HEAD:BOOL=OFF
 // includes
 ABSL_USE_SYSTEM_INCLUDES:BOOL=OFF
 
+//Path to a file.
+BOOST_UUID_INCLUDE_DIR:PATH=/usr/include
+
 //Build documentation
 BUILD_DOC:BOOL=OFF
 
@@ -544,6 +547,10 @@ FETCHCONTENT_FULLY_DISCONNECTED:BOOL=OFF
 FETCHCONTENT_QUIET:BOOL=ON
 
 //When not empty, overrides where to find pre-populated content
+// for Boost
+FETCHCONTENT_SOURCE_DIR_BOOST:PATH=
+
+//When not empty, overrides where to find pre-populated content
 // for glog
 FETCHCONTENT_SOURCE_DIR_GLOG:PATH=
 
@@ -569,6 +576,9 @@ FETCHCONTENT_SOURCE_DIR_LIBPQXX:PATH=
 
 //Enables UPDATE_DISCONNECTED behavior for all content population
 FETCHCONTENT_UPDATES_DISCONNECTED:BOOL=OFF
+
+//Enables UPDATE_DISCONNECTED behavior just for population of Boost
+FETCHCONTENT_UPDATES_DISCONNECTED_BOOST:BOOL=OFF
 
 //Enables UPDATE_DISCONNECTED behavior just for population of glog
 FETCHCONTENT_UPDATES_DISCONNECTED_GLOG:BOOL=OFF
@@ -1016,6 +1026,9 @@ boost_headers_DIR:PATH=/usr/lib/x86_64-linux-gnu/cmake/boost_headers-1.83.0
 //The directory containing a CMake configuration file for boost_system.
 boost_system_DIR:PATH=/usr/lib/x86_64-linux-gnu/cmake/boost_system-1.83.0
 
+//The directory containing a CMake configuration file for boost_uuid.
+boost_uuid_DIR:PATH=boost_uuid_DIR-NOTFOUND
+
 //Value Computed by CMake
 c-ares_BINARY_DIR:STATIC=/home/sakura/text/distributed-task-system/build/_deps/grpc-build/third_party/cares/cares
 
@@ -1026,6 +1039,15 @@ c-ares_IS_TOP_LEVEL:STATIC=OFF
 c-ares_SOURCE_DIR:STATIC=/home/sakura/text/distributed-task-system/build/_deps/grpc-src/third_party/cares/cares
 
 cares_INSTALL:BOOL=OFF
+
+//Value Computed by CMake
+dts_worker_BINARY_DIR:STATIC=/home/sakura/text/distributed-task-system/build/src/worker
+
+//Value Computed by CMake
+dts_worker_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+dts_worker_SOURCE_DIR:STATIC=/home/sakura/text/distributed-task-system/src/worker
 
 gRPC_ABSL_PROVIDER:STRING=module
 
@@ -1600,7 +1622,7 @@ CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_NM
 CMAKE_NM-ADVANCED:INTERNAL=1
 //number of local generators
-CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=52
+CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=54
 //ADVANCED property for variable: CMAKE_OBJCOPY
 CMAKE_OBJCOPY-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_OBJDUMP
@@ -1696,7 +1718,7 @@ CTEST_SUBMIT_RETRY_DELAY-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: DART_TESTING_TIMEOUT
 DART_TESTING_TIMEOUT-ADVANCED:INTERNAL=1
 //Details about finding Boost
-FIND_PACKAGE_MESSAGE_DETAILS_Boost:INTERNAL=[/usr/lib/x86_64-linux-gnu/cmake/Boost-1.83.0/BoostConfig.cmake][cfound components: system filesystem ][v1.83.0(1.80)]
+FIND_PACKAGE_MESSAGE_DETAILS_Boost:INTERNAL=[/usr/lib/x86_64-linux-gnu/cmake/Boost-1.83.0/BoostConfig.cmake][cfound components: system filesystem ][v1.83.0(1.83)]
 //Details about finding PkgConfig
 FIND_PACKAGE_MESSAGE_DETAILS_PkgConfig:INTERNAL=[/usr/bin/pkg-config][v1.8.1()]
 //Details about finding PostgreSQL

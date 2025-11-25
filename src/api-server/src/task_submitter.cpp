@@ -1,19 +1,26 @@
-#include "task_submitter.hpp"
-
-// 包含所有实现所需的头文件
-#include <pqxx/pqxx> // **重要: 包含真实的 libpqxx**
-#include <map>
-#include <sstream>
-#include <stdexcept>
-#include <chrono>
+#include <pqxx/pqxx>
 #include <iostream>
+#include "task_submitter.hpp" // (假设这是 .hpp 文件)
+#include "dag.hpp"             // (需要 SubmitDagRequest 和 TaskEdge)
+#include "task.hpp"            // (需要 Task)
+#include <stdexcept>
+#include <sstream>
+#include <map>
+#include <chrono>
+#include "uuid_generator.hpp" // (假设你有一个这样的头文件)
 
-bool TaskSubmitter::handleSubmitDag(dts::SubmitDagRequest& request, pqxx::connection& conn) {
+
+
+// *** 1. 关键修改：函数签名 ***
+// (它现在接收一个 *事务引用*, 而不是连接)
+bool TaskSubmitter::handleSubmitDag(dts::SubmitDagRequest& request, pqxx::work& tx) {
     
-    // --- 步骤 1: 构建“父依赖计数 Map” (业务逻辑, 不变) ---
+    // -----------------------------------------------------------------
+    // 步骤 1: 计算依赖计数 (不变)
+    // -----------------------------------------------------------------
     std::map<std::string, int> dependency_count;
-    for (const auto& edge : request.edges) {
-        dependency_count[edge.child_id]++;
+    for (const auto& edge : request.edges) {    
+        dependency_count[edge.child_natural_id]++;
     }
     std::cout << "[LOG] 依赖计数计算完毕。" << std::endl;
 
@@ -21,107 +28,145 @@ bool TaskSubmitter::handleSubmitDag(dts::SubmitDagRequest& request, pqxx::connec
         std::chrono::system_clock::now().time_since_epoch()
     ).count();
 
-    // --- 步骤 2: 启动数据库事务 (已更新: 使用 pqxx::work) ---
-    // 'txn' 对象在构造时自动开始 (BEGIN;)
-    // 析构时自动提交 (COMMIT;) 或回滚 (ROLLBACK;)
-    pqxx::work txn(conn);
+    // -----------------------------------------------------------------
+    // 步骤 2: (*** 关键修改：移除 ***)
+    // (事务现在由 *调用者* (main.cpp) 创建)
+    // pqxx::work txn(conn); // <--- 已移除
+    // -----------------------------------------------------------------
 
     try {
-        // --- 步骤 3: (幂等性) (已更新: 使用 txn.exec 和 txn.quote) ---
-        // **安全**: 使用 txn.quote() 转义所有字符串输入
-        std::string idempotency_sql = "INSERT INTO task_idempotency (business_id, job_def_id, created_at) VALUES (" + 
-                                  txn.quote(request.business_id) + ", " + 
-                                  txn.quote(request.job_def_id) + ", " + 
-                                  "NOW()" +  // 直接使用 SQL 的 NOW() 函数，不需要 quote
-                                  ");";
+        // -----------------------------------------------------------------
+        // 步骤 3: 插入 Job (处理幂等性)
+        // -----------------------------------------------------------------
+        std::string new_job_uuid = dts::uuid::generate(); 
+        request.job_id = new_job_uuid; 
+
+        std::string job_insert_sql = 
+            "INSERT INTO public.job (job_id, idempotency_key, state) VALUES (" +
+            tx.quote(request.job_id) + ", " +           // (*** 已修改：使用 tx ***)
+            tx.quote(request.idempotency_key) + ", " +  // (*** 已修改：使用 tx ***)
+            "'0'" +                                     
+            ") ON CONFLICT (idempotency_key) DO NOTHING RETURNING job_id;";
+
+        // (*** 已修改：使用 tx ***)
+        pqxx::result job_res = tx.exec(job_insert_sql);
         
-        try {
-            txn.exec(idempotency_sql);
-        } catch (const pqxx::unique_violation& e) {
-            // **重要**: 专门捕获唯一的键冲突
-            std::cerr << "[ERROR] 幂等性检查失败 (重复请求): " << e.what() << std::endl;
-            txn.abort(); // 明确回滚
-            return false;
-        }
-
-        // --- 步骤 4: (批量创建节点) (已更新: 安全的 SQL) ---
-        if (!request.tasks.empty()) {
-            std::stringstream task_insert_sql;
-            task_insert_sql << "INSERT INTO task_run (job_def_id, task_id, client_id, priority, "
-                            << "func_name, func_params, required, shard, timeout_ms, max_retry, retry_count, submit_ts, "
-                            << "pending_dependencies, state) VALUES ";
-
-            for (size_t i = 0; i < request.tasks.size(); ++i) {
-                auto& task = request.tasks[i];
-                int deps = dependency_count.count(task.task_id) ? dependency_count[task.task_id] : 0;
-                dts::TaskState initial_state = (deps == 0) ? dts::TaskState::PENDING : dts::TaskState::WAITING_DEPS;
-                task.submit_ts = now_ms;
-
-                // **安全**: 序列化后的 JSON 字符串也必须被转义
-                std::string func_params_json = task.func_params.is_null() ? "null" : task.func_params.dump();
-                std::string required_json = nlohmann::json(task.required).dump();
-                std::string shard_json = nlohmann::json(task.shard).dump();
-
-                task_insert_sql << "("
-                                << txn.quote(request.job_def_id) << ", "  // 安全
-                                << txn.quote(task.task_id) << ", "    // 安全
-                                << txn.quote(task.client_id) << ", " // 安全
-                                << task.priority << ", "             // 数字, 安全
-                                << txn.quote(task.func_name) << ", " // 安全
-                                << txn.quote(func_params_json) << ", " // 安全
-                                << txn.quote(required_json) << ", "    // 安全
-                                << txn.quote(shard_json) << ", "       // 安全
-                                << task.timeout_ms << ", "
-                                << task.max_retry << ", "
-                                << task.retry_count << ", "
-                                << task.submit_ts << ", "
-                                << deps << ", "
-                                << static_cast<std::int8_t>(initial_state)
-                                << ")";
-                if (i < request.tasks.size() - 1) task_insert_sql << ", ";
-            }
-            task_insert_sql << ";";
+        if (job_res.empty()) {
+            // 冲突发生 (ON CONFLICT DO NOTHING)，说明是重复提交
+            std::cout << "[LOG] 幂等性冲突 (重复请求): " << request.idempotency_key << std::endl;
             
-            std::cout << "[DB] " << task_insert_sql.str() << std::endl; // 打印生成的 SQL
-            txn.exec(task_insert_sql.str()); // 执行批量插入
+            // (*** 关键修改：移除 ***)
+            // (调用者 main.cpp 会 commit 这个空事务, 这是无害的)
+            // tx.abort(); // <--- 已移除
+            
+            // (返回 true, 因为“提交”这个动作在逻辑上是成功的)
+            return true; 
         }
 
-        // --- 步骤 5: (批量创建边) (已更新: 安全的 SQL) ---
+        // -----------------------------------------------------------------
+        // 步骤 4: "两遍循环 + Map 映射" (逻辑不变)
+        // -----------------------------------------------------------------
+        
+        std::map<std::string, std::string> natural_to_uuid_map;
+        
+        // -----------------------------------------------------------------
+        // 步骤 4a: 第一次循环 (插入 Task)
+        // -----------------------------------------------------------------
+        if (request.tasks.empty()) {
+            throw std::runtime_error("提交的 tasks 列表不能为空");
+        }
+        
+        std::stringstream task_insert_sql;
+        // ... (SQL 字符串不变) ...
+        task_insert_sql << "INSERT INTO public.task "
+                        << "(task_id, job_id, natural_id, func_name, func_params, "
+                        << "priority, state, pending_dependencies, "
+                        << "max_retry, retry_count, timeout_ms, submit_ts) "
+                        << "VALUES ";
+
+        for (size_t i = 0; i < request.tasks.size(); ++i) {
+            auto& task = request.tasks[i];
+            
+            // [修复 2] 必须在这里生成 UUID，否则 task_id 是空的
+            task.task_id = dts::uuid::generate(); 
+            // 记录映射关系，供后面处理 Edge 使用
+            natural_to_uuid_map[task.natural_id] = task.task_id;
+
+            // 计算初始依赖数 (这部分逻辑你应该已经有了)
+            int pending_count = dependency_count[task.natural_id]; 
+            
+            // 确定初始状态 (0=PENDING, 6=WAITING_DEPS)
+            // 假设你的枚举里 PENDING 是 0, WAITING_DEPS 是 6
+            int initial_state = (pending_count == 0) ? 0 : 6; 
+
+            // 5. 构建 SQL
+            task_insert_sql << "("
+                << tx.quote(task.task_id) << ", "
+                << tx.quote(request.job_id) << ", "
+                << tx.quote(task.natural_id) << ", "
+                << tx.quote(task.func_name) << ", "
+                
+                // [修复] 使用 .dump() 将 JSON 对象序列化为字符串
+                << tx.quote(task.func_params.dump()) << ", " 
+                
+                << task.priority << ", "
+                << initial_state << ", "
+                << pending_count << ", "
+                << task.max_retry << ", "
+                << task.retry_count << ", "
+                << task.timeout_ms << ", "
+                << "EXTRACT(EPOCH FROM NOW())::BIGINT"
+                << ")";
+            
+            if (i < request.tasks.size() - 1) task_insert_sql << ", ";
+        }
+        task_insert_sql << ";";
+        
+        std::cout << "[DB] " << task_insert_sql.str() << std::endl;
+        tx.exec(task_insert_sql.str()); // (*** 已修改：使用 tx ***)
+
+        // -----------------------------------------------------------------
+        // 步骤 4b: 第二次循环 (插入 Edge)
+        // -----------------------------------------------------------------
         if (!request.edges.empty()) {
             std::stringstream edge_insert_sql;
-            edge_insert_sql << "INSERT INTO task_edge (job_def_id, parent_run_id, child_run_id) VALUES ";
+            edge_insert_sql << "INSERT INTO public.task_edge (parent_task_id, child_task_id) VALUES ";
+            
             for (size_t i = 0; i < request.edges.size(); ++i) {
                 const auto& edge = request.edges[i];
+
+                // ... (UUID 查找逻辑不变) ...
+                std::string parent_uuid = natural_to_uuid_map.at(edge.parent_natural_id);
+                std::string child_uuid = natural_to_uuid_map.at(edge.child_natural_id);
+
                 edge_insert_sql << "("
-                                << txn.quote(request.job_def_id) << ", "
-                                << txn.quote(edge.parent_id) << ", "
-                                << txn.quote(edge.child_id)
-                                << ")";
+                    << tx.quote(parent_uuid) << ", " // (*** 已修改：使用 tx ***)
+                    << tx.quote(child_uuid)         // (*** 已修改：使用 tx ***)
+                    << ")";
                 if (i < request.edges.size() - 1) edge_insert_sql << ", ";
             }
             edge_insert_sql << ";";
             
             std::cout << "[DB] " << edge_insert_sql.str() << std::endl;
-            txn.exec(edge_insert_sql.str());
+            tx.exec(edge_insert_sql.str()); // (*** 已修改：使用 tx ***)
         }
 
-        // --- 步骤 6: (审计) (已更新: 安全的 SQL) ---
-        std::string audit_sql = "INSERT INTO audit_log (user_id, job_def_id, action_type, details) VALUES ('api_user', " +
-                                txn.quote(request.job_def_id) + ", 'SUBMIT_DAG', 'DAG submitted with " +
-                                txn.quote(std::to_string(request.tasks.size())) + " tasks.');"; // 数字转字符串后也转义
+        // -----------------------------------------------------------------
+        // 步骤 5: (*** 关键修改：移除 ***)
+        // (调用者 main.cpp 将会负责提交)
+        // -----------------------------------------------------------------
+        // tx.commit(); // <--- 已移除
         
-        std::cout << "[DB] " << audit_sql << std::endl;
-        txn.exec(audit_sql);
-
-        // --- 步骤 7: COMMIT (已更新: 使用 txn.commit) ---
-        txn.commit(); // 显式提交
-        std::cout << "[LOG] 任务提交成功 (Job ID: " << request.job_def_id << ")" << std::endl;
-        return true;
+        std::cout << "[LOG] 任务提交成功 (Job ID: " << request.job_id << ")" << std::endl;
+        return true; // (返回 true, 告知 main.cpp 可以 commit)
 
     } catch (const std::exception& e) {
-        // 捕获所有其他异常 (包括 pqxx::sql_error)
-        std::cerr << "[ERROR] 发生数据库异常: " << e.what() << std::endl;
-        // txn 在析构时会自动调用 abort(), 因为 commit() 未被调用
-        return false;
+        // 捕获所有异常
+        std::cerr << "[ERROR] 发生数据库异常或逻辑错误: " << e.what() << std::endl;
+        
+        // (*** 关键修改：不需要回滚 ***)
+        // (调用者 main.cpp 的 try...catch 会捕获这个异常, 
+        //  并且 *不会* commit, tx 析构时会自动回滚)
+        return false; // (返回 false, 告知 main.cpp *不要* commit)
     }
 }

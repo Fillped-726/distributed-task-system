@@ -2,6 +2,7 @@ syntax = "proto3";
 package dts.error;
 
 enum JobErr {
-  JOB_NOT_FOUND = 0;
-  JOB_TIMEOUT   = 1;
+  JOB_ERR_UNSPECIFIED = 0;
+  JOB_NOT_FOUND = 1;
+  JOB_TIMEOUT   = 2;
 }

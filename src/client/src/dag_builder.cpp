@@ -1,77 +1,87 @@
 #include "dag_builder.hpp"
-#include "converters.hpp" // 假设 TaskToProto 在这里定义
-#include <stdexcept>    // 用于 std::runtime_error
-#include <utility>      // 用于 std::move
+#include "converters.hpp" // (!! 假设 TaskToProto 转换器也已更新 !!)
+#include <stdexcept>
+#include <utility> 
 
 namespace dts {
 namespace client {
 
-// --- 构造函数 ---
-DagBuilder::DagBuilder(std::string job_def_id, std::string business_id)
-    : job_def_id_(std::move(job_def_id)),
-      business_id_(std::move(business_id)) {
-    // 幂等键是必需的
-    if (business_id_.empty()) {
-        throw std::invalid_argument("business_id 不能为空");
+// --- 构造函数 (已修正) ---
+DagBuilder::DagBuilder(std::string idempotency_key)
+    : idempotency_key_(std::move(idempotency_key)) {
+    
+    if (idempotency_key_.empty()) {
+        throw std::invalid_argument("idempotency_key 不能为空");
     }
 }
 
-// --- AddTask ---
+// --- AddTask (已修正) ---
 dts::Task& DagBuilder::AddTask(
-    const std::string& task_id,
+    const std::string& natural_id, // <-- (约定) 命名已修正
     const std::string& func_name,
     nlohmann::json func_params
 ) {
-    if (tasks_map_.count(task_id)) {
-        throw std::runtime_error("任务 ID 重复: " + task_id);
+    if (tasks_map_.count(natural_id)) {
+        throw std::runtime_error("任务 natural_id 重复: " + natural_id);
     }
 
     dts::Task task;
-    task.task_id = task_id;
+    
+    // --- (!! 关键修正 !!) ---
+    // (假设 task.hpp 中有 natural_id 和 task_id_uuid 两个字段)
+    
+    // 1. 将 "task_A" 存入 C++ 结构体的 natural_id 字段
+    task.natural_id = natural_id; 
+    
+    // 2. (重要) task.task_id_uuid 字段保持为空！
+    //    它将由后端的 TaskSubmitter (gRPC 服务) 生成。
+    // task.task_id_uuid = ""; // (默认即为空)
+    
     task.func_name = func_name;
     task.func_params = std::move(func_params);
-    // 用户可以在返回的引用上设置 .required, .priority 等
-
+    
     // 插入并获取新插入元素的引用
-    auto [it, success] = tasks_map_.emplace(task_id, std::move(task));
+    auto [it, success] = tasks_map_.emplace(natural_id, std::move(task));
     return it->second;
 }
 
-// --- AddDependency ---
-void DagBuilder::AddDependency(const std::string& parent_id, const std::string& child_id) {
-    if (parent_id == child_id) {
-         throw std::runtime_error("不能添加自依赖: " + parent_id);
+// --- AddDependency (已修正) ---
+void DagBuilder::AddDependency(const std::string& parent_natural_id, const std::string& child_natural_id) {
+    if (parent_natural_id == child_natural_id) {
+           throw std::runtime_error("不能添加自依赖: " + parent_natural_id);
     }
-    if (!tasks_map_.count(parent_id)) {
-        throw std::runtime_error("父节点不存在: " + parent_id);
+    if (!tasks_map_.count(parent_natural_id)) {
+        throw std::runtime_error("父节点不存在: " + parent_natural_id);
     }
-    if (!tasks_map_.count(child_id)) {
-        throw std::runtime_error("子节点不存在: " + child_id);
+    if (!tasks_map_.count(child_natural_id)) {
+        throw std::runtime_error("子节点不存在: " + child_natural_id);
     }
     
-    // (高级功能：可以在此处添加循环依赖检测)
-
-    task_edges_.push_back({parent_id, child_id});
+    task_edges_.push_back({parent_natural_id, child_natural_id});
 }
 
-// --- BuildProto ---
+// --- BuildProto (已修正) ---
 dts::service::SubmitDagRequest DagBuilder::BuildProto() const {
+    
+    // (!! 关键假设: 你的 .proto 文件也必须被修改 !!)
     dts::service::SubmitDagRequest pb_req;
-    pb_req.set_job_def_id(job_def_id_);
-    pb_req.set_business_id(business_id_);
+    
+    // (已修正) 1. 设置幂等键 (不再设置 job_id)
+    pb_req.set_idempotency_key(idempotency_key_);
 
-    // 1. 转换 C++ dts::Task -> Protobuf dts::task::Task
-    // (假设您有 converters::TaskToProto)
+    // 2. 转换 C++ dts::Task -> Protobuf dts::task::Task
     for (const auto& [id, task] : tasks_map_) {
-        // add_tasks() 返回一个 dts::task::Task* 指针
+        // (!! 假设 TaskToProto 会正确转换 natural_id 和 func_name 等字段)
         TaskToProto(task, pb_req.add_tasks());
     }
 
-    // 2. 转换内部 Edge 结构 -> Protobuf dts::service::TaskEdge
+    // 3. 转换 C++ Edge 结构 -> Protobuf dts::service::TaskEdge
     for (const auto& edge : task_edges_) {
         auto* edge_pb = pb_req.add_edges();
-        edge_pb->set_parent_id(edge.parent_id);
-        edge_pb->set_child_id(edge.child_id);
+        
+        // (正确) 将 "task_A", "task_B" 这样的 natural_id 发送给后端
+        edge_pb->set_parent_natural_id(edge.parent_natural_id);
+        edge_pb->set_child_natural_id(edge.child_natural_id);
     }
 
     return pb_req;

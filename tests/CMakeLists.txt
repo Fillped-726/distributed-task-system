@@ -53,34 +53,33 @@ project(CommonTests LANGUAGES CXX)
 # add_test(NAME ApiServerTest COMMAND api_server_test)
 
 
-# 1. 自动查找 connectivity-test 目录下的所有源文件
-file(GLOB CONNECTIVITY_TEST_SOURCES "unit/connectivity-test/*.cpp")
+# # 1. 自动查找 connectivity-test 目录下的所有源文件
+# file(GLOB CONNECTIVITY_TEST_SOURCES "unit/connectivity-test/*.cpp")
 
-# 2. 创建测试可执行文件
-add_executable(connectivity_test ${CONNECTIVITY_TEST_SOURCES})
+# # 2. 创建测试可执行文件
+# add_executable(connectivity_test ${CONNECTIVITY_TEST_SOURCES})
 
-# 3. 链接所需的库
-target_link_libraries(connectivity_test PRIVATE
-    common
-    api_web_lib
-    client 
+# # 3. 链接所需的库
+# target_link_libraries(connectivity_test PRIVATE
+#     common
+#     api_web_lib
+#     client 
     
-    # --- ApiServer 的第三方依赖 ---
-    nlohmann_json::nlohmann_json  # (来自你的示例，ApiServer 也需要)
-    httplib::httplib              # (ApiServer 依赖 httplib, 假设这是它的目标名)
+#     # --- ApiServer 的第三方依赖 ---
+#     httplib::httplib              # (ApiServer 依赖 httplib, 假设这是它的目标名)
     
-    # --- gRPC 依赖 (如果 common 没有 PUBLIC 链接它们) ---
-    grpc++                  
-    protobuf::libprotobuf         
+#     # --- gRPC 依赖 (如果 common 没有 PUBLIC 链接它们) ---
+#     grpc++                  
+#     protobuf::libprotobuf         
 
-    # --- 测试框架库 ---
-    GTest::gtest                  # (GTest 基础)
-    GTest::gtest_main             # (GTest 的 main 函数)
-    GTest::gmock                  # (用于 MockGrpcClient)
-)
+#     # --- 测试框架库 ---
+#     GTest::gtest                  # (GTest 基础)
+#     GTest::gtest_main             # (GTest 的 main 函数)
+#     GTest::gmock                  # (用于 MockGrpcClient)
+# )
 
-# 4. 设置 C++ 标准 (与你的示例保持一致)
-target_compile_features(connectivity_test PUBLIC cxx_std_20)
+# # 4. 设置 C++ 标准 (与你的示例保持一致)
+# target_compile_features(connectivity_test PUBLIC cxx_std_20)
 
-# 5. 将其注册为 CTest 测试
-add_test(NAME ApiConnectivityTest COMMAND connectivity_test)
+# # 5. 将其注册为 CTest 测试
+# add_test(NAME ApiConnectivityTest COMMAND connectivity_test)

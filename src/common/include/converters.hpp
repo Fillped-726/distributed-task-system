@@ -25,6 +25,8 @@ using json = nlohmann::json;
 void JsonToStruct(const json& j, google::protobuf::Struct* proto);
 json StructToJson(const google::protobuf::Struct& proto);
 
+PbTaskState StateToProto(dts::TaskState state);
+
 // Task 类型转换
 void TaskToProto(const dts::Task& task, PbTask* proto);
 CppTask TaskFromProto(const PbTask& proto);

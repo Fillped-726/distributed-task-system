@@ -13,7 +13,7 @@ void AsyncCallContext<S, Rq, Rp>::RequestNext() {
 template class AsyncCallContext<AsyncTaskService, PbSubmitDagRequest, PbSubmitDagResponse>;
 
 /* ---------- AsyncServer 实现 ---------- */
-AsyncServer::AsyncServer(std::shared_ptr<PostgresConnection> db_conn)
+AsyncServer::AsyncServer(std::shared_ptr<DatabasePool> db_conn)
     : db_conn_(std::move(db_conn)) // <-- 保存传入的连接
 {
 }

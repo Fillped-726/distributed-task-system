@@ -98,9 +98,31 @@ FetchContent_MakeAvailable(glog)
 set(GLOG_INCLUDE_DIR "${glog_SOURCE_DIR}/src" "${glog_BINARY_DIR}")  # 公共头文件
 set(GLOG_LIBRARY glog::glog) 
 
-find_package(Boost 1.80 REQUIRED COMPONENTS system filesystem)
+# 查找基本的 Boost 组件（非 header-only）
+find_package(Boost 1.83 REQUIRED COMPONENTS system filesystem)
+
+# 手动处理 Boost UUID（header-only 库）
+# 1. 确保头文件存在
+find_path(BOOST_UUID_INCLUDE_DIR boost/uuid/uuid.hpp
+    PATHS ${Boost_INCLUDE_DIRS}
+    NO_DEFAULT_PATH
+)
+
+if(NOT BOOST_UUID_INCLUDE_DIR)
+    message(FATAL_ERROR "Boost UUID headers not found!")
+endif()
+
+# 2. 手动创建 Boost::uuid 目标
+if(NOT TARGET Boost::uuid)
+    add_library(Boost::uuid INTERFACE IMPORTED)
+    set_target_properties(Boost::uuid PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "${Boost_INCLUDE_DIRS}"
+    )
+endif()
+
 find_package(nlohmann_json REQUIRED)
 find_package(PostgreSQL REQUIRED)
+find_package(Threads REQUIRED)
 
 set(PROTOC_EXEC  "${grpc_BINARY_DIR}/third_party/protobuf/protoc")
 set(GRPC_PLUGIN  "${grpc_BINARY_DIR}/grpc_cpp_plugin")
@@ -137,6 +159,8 @@ add_subdirectory(src/api-server)
 add_subdirectory(src/worker/task-executor)
 add_subdirectory(src/client)
 add_subdirectory(src/api-web)
+add_subdirectory(src/scheduler)
+add_subdirectory(src/worker)
 
 # ---------- 测试 ----------
 enable_testing()

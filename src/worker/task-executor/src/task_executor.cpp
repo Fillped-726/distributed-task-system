@@ -20,7 +20,6 @@ TaskExecutor::TaskExecutor(boost::asio::io_context& io_context)
         if (n <= 1) return {{"result", n}};
         int a = 0, b = 1;
         for (int i = 2; i <= n; ++i) {
-            if (t->cancelled->load()) return nlohmann::json{{"result", "cancelled"}};
             int c = a + b;
             a = b;
             b = c;
@@ -63,7 +62,6 @@ void TaskExecutor::run_task(std::shared_ptr<Task> task) {
     exec_timer->async_wait([this, task, exec_timer](const boost::system::error_code& ec) {
             if(!ec)
             {std::cerr << "[TIMER] cb ec=" << ec.message() << '\n';
-            task->cancelled->store(true, std::memory_order_release);
             update_task_state(task, TaskState::TIMEOUT, {}, "Execution timeout");}
     });
 

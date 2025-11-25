@@ -24,10 +24,10 @@ namespace dts {
 class GrpcClient {
 public:
     GrpcClient(const std::string& target);
-    ~GrpcClient();
+    virtual ~GrpcClient();
 
     void CompleteRpc();
-    SubmitDagResponse submit_dag_sync(const PbSubmitDagRequest& req);
+    virtual SubmitDagResponse submit_dag_sync(const PbSubmitDagRequest& req);
     bool cancel_task(const std::string& task_id);
     Task query_status(const std::string& task_id);
     void listen_results(const std::string& client_id, DagCallback callback);

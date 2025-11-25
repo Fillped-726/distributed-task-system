@@ -1,0 +1,109 @@
+syntax = "proto3";
+
+// 1. 定义包名
+package dts.internal;
+
+// 2. 导入你已有的定义
+// 我们需要 Task 消息 和 TaskState 枚举
+import "dts/task/task.proto"; 
+// 我们需要你定义的公共 RPC 响应头
+import "dts/service/task_service.proto"; 
+import "dts/task/task_state.proto";
+
+//-------------------------------------------------
+// SchedulerService
+// 由 Scheduler 进程实现。
+// Worker 进程作为客户端调用这些接口。
+//-------------------------------------------------
+service SchedulerService {
+    // 1. 注册
+    // Worker 启动时调用，向 Scheduler 注册自己。
+    rpc Register(RegisterRequest) returns (RegisterResponse);
+
+    // 2. 心跳
+    // Worker 定期调用，上报状态，证明自己存活。
+    rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+
+    // 3. 更新任务状态 (核心回调)
+    // Worker 完成任务（成功/失败）后，调用此接口通知 Scheduler。
+    rpc UpdateTaskStatus(UpdateTaskStatusRequest) returns (UpdateTaskStatusResponse);
+}
+
+//-------------------------------------------------
+// WorkerService
+// 由 Worker 进程实现。
+// Scheduler 进程作为客户端调用此接口。
+//-------------------------------------------------
+service WorkerService {
+    // 1. 执行任务
+    // Scheduler 调用此接口，将一个 PENDING 状态的任务派发给 Worker。
+    // Worker 收到后应立即返回，并异步执行任务。
+    rpc RunTask(RunTaskRequest) returns (RunTaskResponse);
+}
+
+
+//=================================================
+// 消息定义
+//=================================================
+
+// --- SchedulerService 相关的消息 ---
+
+message RegisterRequest {
+    // Worker 的唯一 ID，可以是 hostname、pod-name 或 UUID
+    string worker_id = 1; 
+    // Worker 的 gRPC 监听地址，Scheduler 会用这个地址反向调用它
+    string address = 2; // e.g., "10.0.1.5:9091"
+}
+
+message RegisterResponse {
+    dts.service.RpcRespHeader header = 1;
+}
+
+message HeartbeatRequest {
+    string worker_id = 1;
+    // Worker 可以选择性地上报自己的负载情况
+    int32 running_task_count = 2; // 当前正在执行的任务数
+    float cpu_usage_percent = 3;  // CPU 使用率
+}
+
+message HeartbeatResponse {
+    // Scheduler 可以在响应中携带一些指令，
+    // e.g., "STOP_ACCEPTING_TASKS" (用于优雅下线)
+    dts.service.RpcRespHeader header = 1;
+}
+
+message UpdateTaskStatusRequest {
+    // 哪个任务完成了
+    string task_id = 1;
+
+    // 任务的最终状态
+    // 只能是 dts.task.TaskState 中的终态：
+    // SUCCESS (2), FAILED (3), TIMEOUT (4)
+    dts.task.TaskState final_state = 2; 
+
+    // 如果是 FAILED (3)，这里是错误信息
+    string error_msg = 3;
+
+    // 如果是 SUCCESS (2)，这里是任务的 JSON 格式的执行结果
+    // 对应你数据库中的 task.result (jsonb)
+    string result_json = 4; 
+}
+
+message UpdateTaskStatusResponse {
+    dts.service.RpcRespHeader header = 1;
+}
+
+
+// --- WorkerService 相关的消息 ---
+
+message RunTaskRequest {
+    // 派发给 Worker 的完整任务信息
+    // Worker 需要 task_id, func_name, func_params, timeout_ms 等
+    dts.task.Task task = 1;
+}
+
+message RunTaskResponse {
+    // 只要 Worker 成功接收了任务，就返回成功
+    // 真正的执行结果是通过 SchedulerService.UpdateTaskStatus 异步回调的
+    dts.service.RpcRespHeader header = 1;
+}

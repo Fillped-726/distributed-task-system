@@ -1,13 +1,10 @@
 #pragma once
 
 #include "dag.hpp" 
+#include <pqxx/transaction.hxx>
 
-// 向前声明, 避免在头文件中包含重量级的 <pqxx/pqxx>
-namespace pqxx {
-class connection;
-}
 
-class PostgresConnection; // 我们的连接包装类
+class DatabasePool; // 我们的连接包装类
 
 class TaskSubmitter {
 public:
@@ -18,5 +15,5 @@ public:
      * @return bool   true 表示成功, false 表示失败
      */
     // **已更新**: 依赖于真实的 pqxx::connection
-    bool handleSubmitDag(dts::SubmitDagRequest& request, pqxx::connection& conn); 
+    bool handleSubmitDag(dts::SubmitDagRequest& request, pqxx::work& tx); 
 };

@@ -21,25 +21,25 @@ inline std::string LogPrefix(const char* level) {
     return j.dump() + " | ";
 }
 
-// ---------- 宏：完全兼容 glog ----------
-#define LOG_INFO  LOG(INFO)   << LogPrefix("INFO")
-#define LOG_WARN  LOG(WARNING)<< LogPrefix("WARN")
-#define LOG_ERROR LOG(ERROR)  << LogPrefix("ERROR")
-#define LOG_FATAL LOG(FATAL)  << LogPrefix("FATAL")
 
 // ---------- 初始化函数（保持原签名） ----------
 inline void InitGlog(const char* argv0, bool unit_test = false) {
     google::InitGoogleLogging(argv0);
-    if (unit_test) {
-        FLAGS_logtostderr = 1;
-        FLAGS_minloglevel = 1;   // 1=WARNING
-    } else {
-        FLAGS_log_dir = "/var/log/dts";
-        FLAGS_max_log_size = 100;  // 100 MB
-        FLAGS_stop_logging_if_full_disk = true;
-        FLAGS_colorlogtostderr = true;
-        google::InstallFailureSignalHandler();
-    }
+    FLAGS_logtostderr = 1;
+    // if (unit_test) {
+    //     FLAGS_logtostderr = 1;
+    //     FLAGS_minloglevel = 1;   // 1=WARNING
+    // } else {
+    //     FLAGS_max_log_size = 100;  // 100 MB
+    //     FLAGS_stop_logging_if_full_disk = true;
+    //     FLAGS_colorlogtostderr = true;
+    //     google::InstallFailureSignalHandler();
+    // }
 }
 
 } // namespace dts
+
+#define LOG_INFO  LOG(INFO)   << dts::LogPrefix("INFO")
+#define LOG_WARN  LOG(WARNING)<< dts::LogPrefix("WARN")
+#define LOG_ERROR LOG(ERROR)  << dts::LogPrefix("ERROR")
+#define LOG_FATAL LOG(FATAL)  << dts::LogPrefix("FATAL")

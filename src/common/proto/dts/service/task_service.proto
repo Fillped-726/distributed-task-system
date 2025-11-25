@@ -7,24 +7,22 @@ import "dts/error/error.proto";
 message CancelTaskRequest  { string task_id = 1; }
 message QueryTaskRequest   { string task_id = 1; }
 message SubscribeRequest   { string client_id = 1; }
-message SubmitDagRequest {
-  string job_def_id = 1;           
-  string business_id = 2;  
-  repeated dts.task.Task tasks = 3; 
-  repeated dts.task.TaskEdge edges = 4;       
+message SubmitDagRequest {          
+  string idempotency_key = 1;  
+  repeated dts.task.Task tasks = 2; 
+  repeated dts.task.TaskEdge edges = 3;       
 }
 
 // *************** 公共应答头 ***************
 message RpcRespHeader {
-  int32  code       = 1; // 0=成功，非0=错误码
-  string msg        = 2; // 错误描述，成功可为空
-  string request_id = 3; // 链路追踪 ID
+  optional dts.error.Error error = 1;
+  string request_id = 2;
 }
 
 // *************** 业务响应体 ***************
 message SubmitDagResponse {
   RpcRespHeader header = 1;
-  string job_def_id = 2;        
+  string job_id = 2;        
 }
 
 message CancelTaskResponse {

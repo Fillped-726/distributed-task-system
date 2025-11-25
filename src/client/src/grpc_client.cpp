@@ -74,63 +74,76 @@ std::future<SubmitDagResponse> GrpcClient::submit_dag_async(
 SubmitDagResponse GrpcClient::submit_dag_sync(const PbSubmitDagRequest& req) {
     if (!stub_) {
         throw GrpcError(grpc::Status(grpc::StatusCode::UNAVAILABLE,
-                                     "channel not created / connection refused"));
+                                      "channel not created / connection refused"));
     }
 
     grpc::ClientContext ctx;
     ctx.set_deadline(std::chrono::system_clock::now() +
-                     std::chrono::seconds(10));  // 给予 DAG 提交 10 秒超时
+                     std::chrono::seconds(10));
 
     
     SubmitDagResponse resp;
-    grpc::Status st = stub_->SubmitDag(&ctx, req, &resp); // 注意: 调用 SubmitDag
+    grpc::Status st = stub_->SubmitDag(&ctx, req, &resp);
 
     /* 3. (已修改) 判失败 */
     if (!st.ok()) {
-        std::cerr << "[ERROR] SubmitDag failed: " // RPC 命名已更改
+        std::cerr << "[ERROR] SubmitDag failed: " 
                   << st.error_code() << " - " << st.error_message() << std::endl;
         throw GrpcError(st);
     }
 
+    // -----------------------------------------------------
+    // *** 关键修改在这里 ***
+    // -----------------------------------------------------
+
     /* (可选) 检查服务端的业务 Header */
-    if (resp.header().code() != 0) {
-        std::cerr << "[ERROR] SubmitDag rejected by server: code="
-                  << resp.header().code() << ", msg=" << resp.header().msg() << std::endl;
+    if (resp.header().has_error()) { // <--- 检查 'error' 字段是否存在
+        
+        // 获取 error 对象
+        const auto& err = resp.header().error(); 
+        
+        std::cerr << "[ERROR] SubmitDag rejected by server: "
+                  << err.msg() // <--- 从 'error' 对象中获取 msg
+                  << std::endl;
+                  
+        // (校招亮点: 你甚至可以检查 err.sys() 或 err.job() 来获取具体的错误码)
+
         // 抛出一个业务异常
-        throw std::runtime_error("Server rejected DAG: " + resp.header().msg());
+        throw std::runtime_error("Server rejected DAG: " + err.msg());
     }
 
+    // -----------------------------------------------------
+
     /* 4. (已修改) 返回完整的 Protobuf 响应 */
-    // (删除原有的: return TaskFromProto(resp.task());)
     return resp;
 }
 
-std::future<bool> GrpcClient::cancel_task_async(const std::string& task_id) {
-    auto tag = std::make_unique<AsyncCancelTag>();
-    tag->request.set_task_id(task_id);
-    tag->reader = stub_->PrepareAsyncCancelTask(&tag->context,
-                                                tag->request, &cq_);
-    tag->reader->StartCall();
-    tag->reader->Finish(&tag->response, &tag->status, tag.release());
-    return tag->promise.get_future();
-}
+// std::future<bool> GrpcClient::cancel_task_async(const std::string& task_id) {
+//     auto tag = std::make_unique<AsyncCancelTag>();
+//     tag->request.set_task_id(task_id);
+//     tag->reader = stub_->PrepareAsyncCancelTask(&tag->context,
+//                                                 tag->request, &cq_);
+//     tag->reader->StartCall();
+//     tag->reader->Finish(&tag->response, &tag->status, tag.release());
+//     return tag->promise.get_future();
+// }
 
-std::future<Task> GrpcClient::query_status_async(const std::string& task_id) {
-    auto tag = std::make_unique<AsyncQueryTag>();
-    tag->request.set_task_id(task_id);
-    tag->reader = stub_->PrepareAsyncQueryTask(&tag->context,
-                                                 tag->request, &cq_);
-    tag->reader->StartCall();
-    tag->reader->Finish(&tag->response, &tag->status, tag.release());
-    return tag->promise.get_future();
-}
+// std::future<Task> GrpcClient::query_status_async(const std::string& task_id) {
+//     auto tag = std::make_unique<AsyncQueryTag>();
+//     tag->request.set_task_id(task_id);
+//     tag->reader = stub_->PrepareAsyncQueryTask(&tag->context,
+//                                                  tag->request, &cq_);
+//     tag->reader->StartCall();
+//     tag->reader->Finish(&tag->response, &tag->status, tag.release());
+//     return tag->promise.get_future();
+// }
 
-bool GrpcClient::cancel_task(const std::string& task_id) {
-    return cancel_task_async(task_id).get();
-}
-Task GrpcClient::query_status(const std::string& task_id) {
-    return query_status_async(task_id).get();
-}
+// bool GrpcClient::cancel_task(const std::string& task_id) {
+//     return cancel_task_async(task_id).get();
+// }
+// Task GrpcClient::query_status(const std::string& task_id) {
+//     return query_status_async(task_id).get();
+// }
 
 // 流式监听--待完善
 // void GrpcClient::listen_results(const std::string& client_id, Callback cb) {

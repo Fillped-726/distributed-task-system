@@ -80,10 +80,10 @@ private:
     CallStatus                                  status_;
 };
 // 高性能异步服务器（零手写状态机）
-class PostgresConnection;
+class DatabasePool;
 class AsyncServer final {
 public:
-    explicit AsyncServer(std::shared_ptr<PostgresConnection> db_conn);
+    explicit AsyncServer(std::shared_ptr<DatabasePool> db_conn);
     ~AsyncServer();
     void Run(uint16_t port = 0);          // 0 = 随机端口
     void Shutdown();                      // 优雅停机
@@ -91,7 +91,7 @@ public:
 
     // 业务注册点：只写函数，不写类
     using SubmitTaskFunc = std::function<void(
-        std::shared_ptr<PostgresConnection> db_conn, // <-- 新增!
+        std::shared_ptr<DatabasePool> db_conn, // <-- 新增!
         PbSubmitDagRequest* request,                  // gRPC 请求
         PbSubmitDagResponse* response                // gRPC 响应
     )>;
@@ -109,6 +109,6 @@ private:
     int listen_port_ = 0;
 
     SubmitTaskFunc submit_task_;          // 业务回调
-    std::shared_ptr<PostgresConnection> db_conn_;
+    std::shared_ptr<DatabasePool> db_conn_;
 };
 

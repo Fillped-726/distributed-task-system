@@ -1,8 +1,8 @@
-// In dts/submit_dag_request.hpp
+// dag.hpp
 
 #pragma once
 
-#include "task.hpp" // 包含 dts::Task
+#include "task.hpp" 
 #include <string>
 #include <vector>
 
@@ -12,8 +12,8 @@ namespace dts {
  * @brief C++ 运行时的任务依赖关系（边）
  */
 struct TaskEdge {
-    std::string parent_id;
-    std::string child_id;
+    std::string parent_natural_id;
+    std::string child_natural_id;
 };
 
 /**
@@ -22,8 +22,8 @@ struct TaskEdge {
  * 用于 C++ 内部的业务逻辑（如 TaskSubmitter）。
  */
 struct SubmitDagRequest {
-    std::string job_def_id;
-    std::string business_id;
+    std::string job_id;
+    std::string idempotency_key;
 
     std::vector<dts::Task> tasks;
 

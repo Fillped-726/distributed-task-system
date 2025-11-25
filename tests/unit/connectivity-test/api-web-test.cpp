@@ -1,35 +1,48 @@
 #include "gtest/gtest.h"
-#include "api_web.hpp" // 技巧：包含 .cpp 以测试 static 函数和 Impl 类
-#include "mock_grpc_client.hpp" // 上一步的 Mock
+#include "httplib.h" // 包含 httplib
 
+// Pimpl 测试技巧：包含 .cpp 文件以获取 Impl 类的完整定义
+#include "../../../../src/api-web/src/api_web.cpp" 
+
+#include "mock_grpc_client.hpp" // 包含我们的 Mock 类
+
+// GTest/GMock 命名空间
 using ::testing::_;
 using ::testing::Return;
 using ::testing::Throw;
 
-// 测试套件
+// 测试桩 (Test Fixture)
 class ApiServerTest : public ::testing::Test {
 protected:
+    // FIX: 重新添加这行被我误删的声明
     std::shared_ptr<MockGrpcClient> mock_client;
-    std::unique_ptr<dts::api::ApiServer::ApiServerImpl> api_impl;
+    
+    std::unique_ptr<dts::api::ApiServerImpl> api_impl;
 
     void SetUp() override {
         // 1. 创建 Mock 实例
-        mock_client = std::make_shared<MockGrpcClient>();
+        mock_client = std::make_shared<MockGrpcClient>(); // <-- 这行现在可以工作了
 
         // 2. 注入 Mock 实例
-        // (注意：这里我们直接实例化 Impl 类，而不是 ApiServer)
-        api_impl = std::make_unique<dts::api::ApiServer::ApiServerImpl>(
+        api_impl = std::make_unique<dts::api::ApiServerImpl>(
             mock_client, "test.host", 1234);
     }
 };
+
+// --- 测试用例 ---
 
 // 测试用例 1: 成功的流程
 TEST_F(ApiServerTest, HandleDagSubmit_Success) {
     httplib::Request req;
     httplib::Response res;
 
-    // 1. 准备输入
-    req.body = R"({ "idempotency_key": "key1", "tasks": [...] })"; // (省略完整的 JSON)
+    // 1. 准备输入 (使用一个有效的 JSON)
+    req.body = R"({
+        "idempotency_key": "key1",
+        "tasks": [
+            {"task_id": "A", "func_name": "f1"}
+        ]
+    })";
 
     // 2. 准备 Mock 的返回值
     dts::service::SubmitDagResponse fake_response;
@@ -37,9 +50,7 @@ TEST_F(ApiServerTest, HandleDagSubmit_Success) {
     fake_response.mutable_header()->set_msg("Success");
 
     // 3. 设置期望：
-    // 期望 mock_client 的 submit_dag_sync 会被调用 1 次
-    // 当它被调用时，返回我们准备好的 fake_response
-    EXPECT_CALL(*mock_client, submit_dag_sync(_))
+    EXPECT_CALL(*mock_client, submit_dag_sync(_)) // <-- 这行现在可以工作了
         .Times(1)
         .WillOnce(Return(fake_response));
 
@@ -58,7 +69,7 @@ TEST_F(ApiServerTest, HandleDagSubmit_BadJson) {
     req.body = "{ invalid json: }"; // 错误的 JSON
 
     // 期望：gRPC 客户端根本不应该被调用
-    EXPECT_CALL(*mock_client, submit_dag_sync(_)).Times(0);
+    EXPECT_CALL(*mock_client, submit_dag_sync(_)).Times(0); // <-- 这行现在可以工作了
 
     // 执行
     api_impl->handle_dag_submit(req, res);
@@ -72,17 +83,24 @@ TEST_F(ApiServerTest, HandleDagSubmit_BadJson) {
 TEST_F(ApiServerTest, HandleDagSubmit_GrpcTransportError) {
     httplib::Request req;
     httplib::Response res;
-    req.body = R"({ "idempotency_key": "key2", "tasks": [...] })"; // (省略)
+    
+    // 1. 准备有效的输入
+    req.body = R"({
+        "idempotency_key": "key2",
+        "tasks": [
+            {"task_id": "B", "func_name": "f2"}
+        ]
+    })";
 
-    // 期望：当 gRPC 客户端被调用时，它抛出一个 runtime_error
-    EXPECT_CALL(*mock_client, submit_dag_sync(_))
+    // 2. 期望：当 gRPC 客户端被调用时，它抛出一个 runtime_error
+    EXPECT_CALL(*mock_client, submit_dag_sync(_)) // <-- 这行现在可以工作了
         .Times(1)
         .WillOnce(Throw(std::runtime_error("Connection refused")));
 
-    // 执行
+    // 3. 执行
     api_impl->handle_dag_submit(req, res);
 
-    // 断言：返回 503 错误
+    // 4. 断言：返回 503 错误
     ASSERT_EQ(res.status, 503);
     ASSERT_TRUE(res.body.find("gRPC 传输错误") != std::string::npos);
 }

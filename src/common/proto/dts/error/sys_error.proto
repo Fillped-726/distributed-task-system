@@ -2,7 +2,7 @@ syntax = "proto3";
 package dts.error;
 
 enum SysErr {
-  SYS_OK            = 0;
+  SYS_ERR_UNSPECIFIED = 0;
   SYS_INVALID_PARAM = 1;
   SYS_RATE_LIMITED  = 2;
   SYS_IDEMPOTENT    = 3;
