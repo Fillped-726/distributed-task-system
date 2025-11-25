@@ -13,6 +13,8 @@ namespace dts {
 namespace dts {
 namespace api {
 
+class ApiServerImpl;
+
 /**
  * @brief 运行一个 HTTP/REST API 服务器。
  * * 它接收来自 Web 前端的 JSON 请求，使用 DagBuilder 构建它们，
@@ -64,7 +66,7 @@ public:
 private:
     // PIMPL 模式：指向私有实现的指针。
     // ApiServerImpl 的定义将在 .cpp 文件中。
-    class ApiServerImpl;
+    
     std::unique_ptr<ApiServerImpl> pimpl_;
 };
 

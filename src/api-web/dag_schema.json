@@ -1,37 +1,34 @@
 {
-  "job_id": "daily_report_job_123",  
-  "idempotency_key": "user-uuid-key-456", 
+  "client_id": "frontend_user_001", 
+  "idempotency_key": "unique_key_20251125_001", 
   "tasks": [
     {
-      "task_id": "T1_fetch_data",
-      "func_name": "http_get",
-      "func_params": {
-        "url": "http://api.example.com/data",
-        "timeout": 5000
-      },
-      "priority": 10,
-      "required": {
-        "cpu_core": 0.5,
-        "mem_mb": 256
-      }
+      "natural_id": "node_1_download",
+      "func_name": "download_data",
+      "func_params": "{\"url\": \"http://example.com/data.csv\"}",
+      "priority": 10
     },
     {
-      "task_id": "T2_process_data",
-      "func_name": "data_process_py",
-      "func_params": {
-        "mode": "aggressive"
-      },
-      "priority": 5,
-      "required": {
-        "cpu_core": 2.0,
-        "mem_mb": 1024
-      }
+      "natural_id": "node_2_process",
+      "func_name": "process_data",
+      "func_params": "{\"threshold\": 0.8}",
+      "priority": 10
+    },
+    {
+      "natural_id": "node_3_upload",
+      "func_name": "upload_results",
+      "func_params": "{\"dest\": \"s3://bucket/report.pdf\"}",
+      "priority": 10
     }
   ],
-  "edges": [
+  "dependencies": [
     {
-      "parent": "T1_fetch_data",
-      "child": "T2_process_data"
+      "from_natural_id": "node_1_download",
+      "to_natural_id": "node_2_process"
+    },
+    {
+      "from_natural_id": "node_2_process",
+      "to_natural_id": "node_3_upload"
     }
   ]
 }

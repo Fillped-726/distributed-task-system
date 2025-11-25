@@ -20,7 +20,7 @@ int main() {
 
     try {
         // 1. 初始化 gRPC 客户端 (连接到 DTS 后端服务)
-        const std::string dts_service_addr = "localhost:50051"; // <-- 您的 gRPC 服务地址
+        const std::string dts_service_addr = "localhost:45403"; // <-- 您的 gRPC 服务地址
         auto grpc_client = std::make_shared<dts::GrpcClient>(dts_service_addr);
         std::cout << "[Main] gRPC 客户端已连接到 " << dts_service_addr << std::endl;
 
