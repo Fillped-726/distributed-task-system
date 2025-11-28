@@ -3,64 +3,58 @@
 #include <string>
 #include <vector>
 #include <memory>
-#include <pqxx/pqxx> // *** 包含 libpqxx ***
+#include <pqxx/pqxx>
 
-// 包含我们的 DatabasePool
-#include "database_pool.h" 
+#include "database_pool.h"
+#include "dts/internal/internal_service.pb.h"  // UpdateTaskStatusRequest
+#include "dts/task/task.pb.h"                  // Task, TaskState
 
-// 包含 gRPC proto 生成的头文件
-#include "dts/internal/internal_service.grpc.pb.h"
-#include "dts/task/task.pb.h" // 需要 dts::task::Task 和 dts::task::TaskState
+namespace dts {
+namespace scheduler {
 
 class TaskRepository {
-public:
-    // -----------------------------------------------------
-    // 构造函数 (依赖注入)
-    // -----------------------------------------------------
-    
-    // *** 关键改动：注入你新的 DatabasePool ***
-    TaskRepository(std::shared_ptr<DatabasePool> db_pool);
+ public:
+  // 构造函数
+  explicit TaskRepository(std::shared_ptr<dts::common::DatabasePool> db_pool);
+  virtual ~TaskRepository();
 
-    virtual ~TaskRepository() {}
+  // -----------------------------------------------------
+  // 核心 API
+  // -----------------------------------------------------
 
-    // -----------------------------------------------------
-    // 5 个核心功能 (API 保持不变)
-    // -----------------------------------------------------
+  // 1. 处理任务完成 (核心 DAG 驱动)
+  // 返回值: true 表示事务提交成功
+  bool HandleTaskCompletion(
+      const dts::internal::UpdateTaskStatusRequest* request);
 
-    // 1. (被 gRPC 调用) 核心 DAG 推进逻辑
-    bool HandleTaskCompletion(
-        const dts::internal::UpdateTaskStatusRequest* request
-    );
+  // 2. 拉取待调度的任务 (Polling)
+  std::vector<dts::task::Task> GetPendingTasks(int limit);
 
-    // 2a. (被调度循环调用) 拉取待调度的任务
-    std::vector<dts::task::Task> GetPendingTasks(int limit);
+  // 3. 抢占任务 (Optimistic Locking)
+  // 尝试将任务从 PENDING -> RUNNING，并绑定 worker_id
+  bool UpdateTaskToRunning(const std::string& task_id,
+                           const std::string& worker_id);
 
-    // 2b. (被调度循环调用) 将任务状态更新为 RUNNING (乐观锁)
-    bool UpdateTaskToRunning(const std::string& task_id, const std::string& worker_id);
+  // 4. 回滚任务 (当 RPC 调用失败时)
+  bool RevertTaskToPending(const std::string& task_id);
 
-    // 2c. (被调度循环调用) 回滚任务状态 (gRPC 派发失败时)
-    bool RevertTaskToPending(const std::string& task_id);
+  // 5. 清理僵尸任务 (当 Worker 宕机时)
+  // 返回被恢复的任务数量
+  int RequeueOrphanedTasks(const std::string& dead_worker_id);
 
-    // 3a. (被巡检线程调用) 重置“僵尸”任务
-    int RequeueOrphanedTasks(const std::string& dead_worker_id);
+ private:
+  std::shared_ptr<dts::common::DatabasePool> db_pool_;
 
+  // -----------------------------------------------------
+  // 内部事务逻辑 Helper
+  // -----------------------------------------------------
 
-private:
-    // -----------------------------------------------------
-    // 私有成员 (依赖)
-    // -----------------------------------------------------
-    
-    std::shared_ptr<DatabasePool> db_pool_;
-    
-    // -----------------------------------------------------
-    // 私有助手 (Helper) 函数 (用于事务)
-    // -----------------------------------------------------
-    
-    // *** 关键改动：我们明确使用 pqxx::work 作为事务类型 ***
-    
-    // 1. 当任务成功时, 推进 DAG (在事务中调用)
-    bool PropagateSuccess(pqxx::work& tx, const std::string& parent_task_id);
+  // DAG 后继节点触发
+  bool PropagateSuccess(pqxx::work& tx, const std::string& parent_task_id);
 
-    // 2. 当任务失败时, 处理重试 (在事务中调用)
-    bool HandleRetry(pqxx::work& tx, const std::string& task_id);
+  // 失败重试逻辑
+  bool HandleRetry(pqxx::work& tx, const std::string& task_id);
 };
+
+}  // namespace scheduler
+}  // namespace dts

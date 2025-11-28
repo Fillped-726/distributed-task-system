@@ -1,30 +1,22 @@
 cmake_minimum_required(VERSION 3.20)
+project(dts_client)
 
-add_library(client STATIC)
-
-target_include_directories(client
-    PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
+# ---- 定义客户端库 ----
+add_library(dts_client STATIC
+    src/grpc_client.cpp
+    src/dag_builder.cpp
 )
 
-target_sources(client
+# ---- 头文件暴露 ----
+target_include_directories(dts_client
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+)
+
+# ---- 链接依赖 ----
+target_link_libraries(dts_client
+    PUBLIC
+        dts_common   # 继承 common 的所有 Proto 定义和工具
     PRIVATE
-        src/exceptions.cpp
-        src/grpc_client.cpp
-        src/dag_builder.cpp
-    PUBLIC
-        FILE_SET HEADERS
-        BASE_DIRS include
-        FILES
-            include/types.hpp
-            include/exceptions.hpp
-            include/async_tags.hpp
-            include/grpc_client.hpp
-)
-
-target_link_libraries(client
-    PUBLIC
-        common_core
-        grpc++
-        protobuf::libprotobuf
+        # 如果 client 内部有些特殊处理不需要暴露给使用者，写在 PRIVATE
 )

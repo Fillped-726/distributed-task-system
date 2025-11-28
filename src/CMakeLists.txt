@@ -1,0 +1,6 @@
+add_subdirectory(common) 
+add_subdirectory(api-server)
+add_subdirectory(client)   
+add_subdirectory(scheduler) 
+add_subdirectory(worker)   
+add_subdirectory(api-web)

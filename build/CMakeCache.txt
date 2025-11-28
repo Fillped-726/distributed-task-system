@@ -604,9 +604,39 @@ GITCOMMAND:FILEPATH=/usr/bin/git
 //Git command line client
 GIT_EXECUTABLE:FILEPATH=/usr/bin/git
 
+//Path to a library.
+GMOCK_LIBRARY:FILEPATH=GMOCK_LIBRARY-NOTFOUND
+
+//Path to a library.
+GMOCK_LIBRARY_DEBUG:FILEPATH=GMOCK_LIBRARY_DEBUG-NOTFOUND
+
+//Path to a library.
+GMOCK_MAIN_LIBRARY:FILEPATH=GMOCK_MAIN_LIBRARY-NOTFOUND
+
+//Path to a library.
+GMOCK_MAIN_LIBRARY_DEBUG:FILEPATH=GMOCK_MAIN_LIBRARY_DEBUG-NOTFOUND
+
+//Path to a program.
+GRPC_CPP_PLUGIN_EXECUTABLE:FILEPATH=GRPC_CPP_PLUGIN_EXECUTABLE-NOTFOUND
+
 //Use Abseil and RE2. Requires Abseil and RE2 to be separately
 // added to the build.
 GTEST_HAS_ABSL:BOOL=OFF
+
+//Path to a file.
+GTEST_INCLUDE_DIR:PATH=GTEST_INCLUDE_DIR-NOTFOUND
+
+//Path to a library.
+GTEST_LIBRARY:FILEPATH=GTEST_LIBRARY-NOTFOUND
+
+//Path to a library.
+GTEST_LIBRARY_DEBUG:FILEPATH=GTEST_LIBRARY_DEBUG-NOTFOUND
+
+//Path to a library.
+GTEST_MAIN_LIBRARY:FILEPATH=GTEST_MAIN_LIBRARY-NOTFOUND
+
+//Path to a library.
+GTEST_MAIN_LIBRARY_DEBUG:FILEPATH=GTEST_MAIN_LIBRARY_DEBUG-NOTFOUND
 
 //The directory containing a CMake configuration file for GTest.
 GTest_DIR:PATH=GTest_DIR-NOTFOUND
@@ -1041,6 +1071,51 @@ c-ares_SOURCE_DIR:STATIC=/home/sakura/text/distributed-task-system/build/_deps/g
 cares_INSTALL:BOOL=OFF
 
 //Value Computed by CMake
+dts_api_server_BINARY_DIR:STATIC=/home/sakura/text/distributed-task-system/build/src/api-server
+
+//Value Computed by CMake
+dts_api_server_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+dts_api_server_SOURCE_DIR:STATIC=/home/sakura/text/distributed-task-system/src/api-server
+
+//Value Computed by CMake
+dts_api_web_BINARY_DIR:STATIC=/home/sakura/text/distributed-task-system/build/src/api-web
+
+//Value Computed by CMake
+dts_api_web_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+dts_api_web_SOURCE_DIR:STATIC=/home/sakura/text/distributed-task-system/src/api-web
+
+//Value Computed by CMake
+dts_client_BINARY_DIR:STATIC=/home/sakura/text/distributed-task-system/build/src/client
+
+//Value Computed by CMake
+dts_client_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+dts_client_SOURCE_DIR:STATIC=/home/sakura/text/distributed-task-system/src/client
+
+//Value Computed by CMake
+dts_common_BINARY_DIR:STATIC=/home/sakura/text/distributed-task-system/build/src/common
+
+//Value Computed by CMake
+dts_common_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+dts_common_SOURCE_DIR:STATIC=/home/sakura/text/distributed-task-system/src/common
+
+//Value Computed by CMake
+dts_scheduler_BINARY_DIR:STATIC=/home/sakura/text/distributed-task-system/build/src/scheduler
+
+//Value Computed by CMake
+dts_scheduler_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+dts_scheduler_SOURCE_DIR:STATIC=/home/sakura/text/distributed-task-system/src/scheduler
+
+//Value Computed by CMake
 dts_worker_BINARY_DIR:STATIC=/home/sakura/text/distributed-task-system/build/src/worker
 
 //Value Computed by CMake
@@ -1086,6 +1161,9 @@ gRPC_BUILD_MSVC_MP_COUNT:STRING=0
 gRPC_BUILD_TESTS:BOOL=OFF
 
 gRPC_CARES_PROVIDER:STRING=module
+
+//The directory containing a CMake configuration file for gRPC.
+gRPC_DIR:PATH=gRPC_DIR-NOTFOUND
 
 gRPC_INSTALL:BOOL=OFF
 
@@ -1622,7 +1700,7 @@ CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_NM
 CMAKE_NM-ADVANCED:INTERNAL=1
 //number of local generators
-CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=54
+CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=56
 //ADVANCED property for variable: CMAKE_OBJCOPY
 CMAKE_OBJCOPY-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_OBJDUMP
@@ -1731,6 +1809,24 @@ FIND_PACKAGE_MESSAGE_DETAILS_nlohmann_json:INTERNAL=[/usr/share/cmake/nlohmann_j
 GITCOMMAND-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: GIT_EXECUTABLE
 GIT_EXECUTABLE-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: GMOCK_LIBRARY
+GMOCK_LIBRARY-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: GMOCK_LIBRARY_DEBUG
+GMOCK_LIBRARY_DEBUG-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: GMOCK_MAIN_LIBRARY
+GMOCK_MAIN_LIBRARY-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: GMOCK_MAIN_LIBRARY_DEBUG
+GMOCK_MAIN_LIBRARY_DEBUG-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: GTEST_INCLUDE_DIR
+GTEST_INCLUDE_DIR-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: GTEST_LIBRARY
+GTEST_LIBRARY-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: GTEST_LIBRARY_DEBUG
+GTEST_LIBRARY_DEBUG-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: GTEST_MAIN_LIBRARY
+GTEST_MAIN_LIBRARY-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: GTEST_MAIN_LIBRARY_DEBUG
+GTEST_MAIN_LIBRARY_DEBUG-ADVANCED:INTERNAL=1
 //Have symbol AF_INET6
 HAVE_AF_INET6:INTERNAL=1
 //Test HAVE_ALIGNED_STORAGE

@@ -1,0 +1,34 @@
+{
+  "client_id": "frontend_user_001", 
+  "idempotency_key": "unique_key_20251125_004", 
+  "tasks": [
+    {
+      "natural_id": "node_1_download",
+      "func_name": "download_data",
+      "func_params": "{\"url\": \"http://example.com/data.csv\"}",
+      "priority": 10
+    },
+    {
+      "natural_id": "node_2_process",
+      "func_name": "process_data",
+      "func_params": "{\"threshold\": 0.8}",
+      "priority": 10
+    },
+    {
+      "natural_id": "node_3_upload",
+      "func_name": "upload_results",
+      "func_params": "{\"dest\": \"s3://bucket/report.pdf\"}",
+      "priority": 10
+    }
+  ],
+  "dependencies": [
+    {
+      "from_natural_id": "node_1_download",
+      "to_natural_id": "node_2_process"
+    },
+    {
+      "from_natural_id": "node_2_process",
+      "to_natural_id": "node_3_upload"
+    }
+  ]
+}

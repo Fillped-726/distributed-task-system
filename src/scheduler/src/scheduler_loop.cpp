@@ -1,220 +1,188 @@
 #include "scheduler_loop.h"
-#include <algorithm> // for std::sort
-#include <chrono>    // for std::this_thread::sleep_for
+#include "logger.hpp"
+#include <algorithm>
+#include <chrono>
 
-// -----------------------------------------------------
-// 构造与析构
-// -----------------------------------------------------
-SchedulerLoop::SchedulerLoop(
-    std::shared_ptr<TaskRepository> task_repo,
-    std::shared_ptr<WorkerManager> worker_manager
-) : task_repo_(task_repo), 
-    worker_manager_(worker_manager), 
-    stop_flag_(false) 
-{
-    if (task_repo_ == nullptr) {
-        throw std::runtime_error("TaskRepository is null");
-    }
-    if (worker_manager_ == nullptr) {
-        throw std::runtime_error("WorkerManager is null");
-    }
+namespace dts {
+namespace scheduler {
+
+SchedulerLoop::SchedulerLoop(std::shared_ptr<TaskRepository> task_repo,
+                             std::shared_ptr<WorkerManager> worker_manager)
+    : task_repo_(task_repo),
+      worker_manager_(worker_manager),
+      stop_flag_(false) {
+  if (!task_repo_ || !worker_manager_) {
+    LOG_FATAL << "SchedulerLoop initialized with null dependencies";
+  }
+  dispatch_pool_ = std::make_unique<dts::common::ThreadPool>(8);
+
+  LOG_INFO << "SchedulerLoop initialized with dispatch thread pool size: 8";
+  LOG_INFO << "SchedulerLoop initialized.";
 }
 
-SchedulerLoop::~SchedulerLoop() {
-    Stop();
-}
+SchedulerLoop::~SchedulerLoop() { Stop(); }
 
-// -----------------------------------------------------
-// 线程启停
-// -----------------------------------------------------
 void SchedulerLoop::Start() {
-    std::cout << "[SchedulerLoop] Starting..." << std::endl;
-    // 启动一个新线程, 执行 RunLoop()
-    loop_thread_ = std::thread(&SchedulerLoop::RunLoop, this);
+  if (stop_flag_) return;  // 避免重复启动
+  LOG_INFO << "SchedulerLoop starting...";
+  loop_thread_ = std::thread(&SchedulerLoop::RunLoop, this);
 }
 
 void SchedulerLoop::Stop() {
-    std::cout << "[SchedulerLoop] Stopping..." << std::endl;
-    stop_flag_ = true; // 设置停止标记
-
-    // 等待线程安全退出
-    if (loop_thread_.joinable()) {
-        loop_thread_.join();
-    }
+  if (stop_flag_) return;
+  LOG_INFO << "SchedulerLoop stopping...";
+  stop_flag_ = true;
+  if (loop_thread_.joinable()) {
+    loop_thread_.join();
+  }
+  LOG_INFO << "SchedulerLoop stopped.";
 }
 
-// -----------------------------------------------------
-// 核心：调度循环 (5 步法)
-// -----------------------------------------------------
 void SchedulerLoop::RunLoop() {
-    while (!stop_flag_) {
-        try {
-            // 步骤 1: 拉取 (Pull)
-            // (我们之前讨论过, 批处理大小为 20)
-            std::vector<dts::task::Task> tasks = task_repo_->GetPendingTasks(20);
+  const int BATCH_SIZE = 20;
+  const int WORKER_CAPACITY = 10;
 
-            if (tasks.empty()) {
-                // 没有任务, 休息一下, 避免 CPU 空转
-                std::this_thread::sleep_for(std::chrono::seconds(1));
-                continue;
-            }
+  while (!stop_flag_) {
+    try {
+      // 1. Pull: 拉取一批 PENDING 任务
+      auto tasks = task_repo_->GetPendingTasks(BATCH_SIZE);
+      if (tasks.empty()) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        continue;
+      }
 
-            // 步骤 2: 筛选 (Filter)
-            // (WorkerManager 返回已按 "running_task_count" 升序排序的列表)
-            std::vector<WorkerInfo> workers = worker_manager_->GetAvailableWorkersSorted();
-            
-            if (workers.empty()) {
-                // 有任务, 但没 Worker, 严重问题, 休息 5 秒
-                std::cerr << "[SchedulerLoop] " << tasks.size() 
-                          << " tasks pending, but no workers available!" << std::endl;
-                std::this_thread::sleep_for(std::chrono::seconds(5));
-                continue;
-            }
+      // 2. Filter: 获取可用 Worker
+      // 注意：GetAvailableWorkersSorted 返回的是副本，所以是线程安全的
+      auto workers = worker_manager_->GetAvailableWorkersSorted();
+      if (workers.empty()) {
+        LOG_WARN << "Pending tasks found (" << tasks.size()
+                 << ") but no workers available!";
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+        continue;
+      }
 
-            // 步骤 3 & 4: 匹配 (Match) 与派发 (Dispatch)
-            // (这是我们讨论过的“贪心 + 内存排序”负载均衡策略)
-            
-            int dispatched_count = 0;
-            const int MAX_TASKS_PER_WORKER_CAPACITY = 10; // 假设设置一个 Worker 容量
+      // 3. Match & Dispatch
+      int dispatched_count = 0;
 
-            for (const auto& task : tasks) {
-                // 3. 匹配: 永远选择列表中的第一个 (最空闲的)
-                WorkerInfo& best_worker = workers[0];
+      for (const auto& task : tasks) {
+        if (stop_flag_) break;
 
-                // 负载均衡: 检查最空闲的 Worker 是否也满了
-                if (best_worker.running_task_count >= MAX_TASKS_PER_WORKER_CAPACITY) {
-                    // 所有 Worker 都满了, 停止本轮派发
-                    break; 
-                }
+        // 贪心策略：总是取最闲的一个
+        // 由于我们每次循环都会重新 sort，所以 workers[0] 总是当前最闲的
+        WorkerInfo& best_worker = workers[0];
 
-                // 4. 派发: 启动一个*新*线程来执行派发 (避免阻塞循环)
-                // (注意：这里必须拷贝 task 和 best_worker, 否则有线程安全问题)
-                std::thread(&SchedulerLoop::DoDispatch, this, task, best_worker).detach();
-                
-                dispatched_count++;
-
-                // *** 核心负载均衡：更新内存状态 ***
-                // 1. 在内存中立刻增加该 Worker 的计数
-                best_worker.running_task_count++;
-                // 2. 重新排序, 让它"沉"下去, 保证下一个任务分配给"次空闲"的 Worker
-                std::sort(workers.begin(), workers.end(), 
-                    [](const WorkerInfo& a, const WorkerInfo& b) {
-                        return a.running_task_count < b.running_task_count;
-                    });
-            } // end for (task : tasks)
-
-            // 步骤 5: 休眠 (Sleep)
-            if (dispatched_count == 0 && !tasks.empty()) {
-                // "任务很多, 但 Worker 全满" -> 快速重试
-                std::this_thread::sleep_for(std::chrono::milliseconds(200));
-            } else {
-                // 正常休眠
-                std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            }
-
-        } catch (const std::exception& e) {
-            std::cerr << "[SchedulerLoop] EXCEPTION: " << e.what() << std::endl;
-            // 发生异常, 防止 CPU 占满, 休息一下
-            std::this_thread::sleep_for(std::chrono::seconds(5));
+        if (best_worker.running_task_count >= WORKER_CAPACITY) {
+          // 集群满了
+          break;
         }
-    } // end while(!stop_flag_)
-    
-    std::cout << "[SchedulerLoop] Loop terminated." << std::endl;
+
+        std::string trace_id = "DISP-" + task.task_id();
+        dts::SetRequestId(trace_id);
+
+        dispatch_pool_->enqueue([this, task, best_worker]() {
+          this->DoDispatch(task, best_worker);
+        });
+
+        dispatched_count++;
+
+        // 更新内存状态并重排
+        best_worker.running_task_count++;
+
+        // 局部重排 (小优化：其实只需要把 workers[0] 冒泡下去，不必全排)
+        // 但 std::sort 对部分有序数组也很快
+        std::sort(workers.begin(), workers.end(),
+                  [](const WorkerInfo& a, const WorkerInfo& b) {
+                    return a.running_task_count < b.running_task_count;
+                  });
+      }
+
+      // 4. Sleep Strategy
+      if (dispatched_count == 0 && !tasks.empty()) {
+        // 有任务但派发不出去（集群满载），快速重试
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+      } else {
+        // 正常间隔
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+      }
+
+    } catch (const std::exception& e) {
+      LOG_ERROR << "SchedulerLoop exception: " << e.what();
+      std::this_thread::sleep_for(std::chrono::seconds(3));
+    }
+  }
 }
 
-// -----------------------------------------------------
-// 核心：派发逻辑 (在自己的线程中运行)
-// -----------------------------------------------------
-void SchedulerLoop::DoDispatch(dts::task::Task task, WorkerInfo worker) {
-    
-    // 步骤 4a: 乐观锁 - 尝试将任务状态从 PENDING 更新为 RUNNING
-    bool updated = task_repo_->UpdateTaskToRunning(task.task_id(), worker.worker_id);
+void SchedulerLoop::DoDispatch(const dts::task::Task& task,
+                               const WorkerInfo& worker) {
+  // 1. 乐观锁抢占 (DB)
+  bool updated =
+      task_repo_->UpdateTaskToRunning(task.task_id(), worker.worker_id);
+  if (!updated) {
+    // 抢占失败，可能是被别的 Scheduler 抢了，或者任务刚被取消
+    LOG_DEBUG << "Failed to lock task " << task.task_id() << " (CAS failed)";
+    return;
+  }
 
-    if (!updated) {
-        // 任务被其他 scheduler 实例抢走了 (或已被取消)
-        // (这是正常现象, 不用记录错误)
-        return; 
-    }
+  // 2. 获取 RPC Stub
+  auto stub = GetWorkerStub(worker.address);
+  if (!stub) {
+    LOG_ERROR << "Failed to connect to worker " << worker.address;
+    task_repo_->RevertTaskToPending(task.task_id());
+    return;
+  }
 
-    // 步骤 4b: 通过 gRPC 调用 Worker
-    std::shared_ptr<dts::internal::WorkerService::Stub> stub = GetWorkerStub(worker.address);
-    if (stub == nullptr) {
-        std::cerr << "[SchedulerLoop] Failed to create gRPC stub for " << worker.address << std::endl;
-        // 回滚
-        task_repo_->RevertTaskToPending(task.task_id());
-        return;
-    }
+  // 3. 构造请求
+  dts::internal::RunTaskRequest request;
+  *request.mutable_task() = task;
+  dts::internal::RunTaskResponse response;
 
-    dts::internal::RunTaskRequest request;
-    *request.mutable_task() = task; // 拷贝 Task 对象
-    dts::internal::RunTaskResponse response;
-    grpc::ClientContext context;
-    // (可以设置一个超时时间)
-    context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(5));
+  grpc::ClientContext context;
+  context.set_deadline(std::chrono::system_clock::now() +
+                       std::chrono::seconds(5));
 
-    grpc::Status status = stub->RunTask(&context, request, &response);
+  // 4. RPC 调用
+  grpc::Status status = stub->RunTask(&context, request, &response);
 
-    // 步骤 4c: 处理 gRPC 调用失败 (容错)
-    if (!status.ok()) {
-        // *** 核心亮点：容错与回滚 ***
-        // Worker 刚巧挂了, gRPC 连接失败
-        std::cerr << "[SchedulerLoop] Failed to dispatch task " << task.task_id() 
-                  << " to worker " << worker.worker_id << ": " 
-                  << status.error_message() << std::endl;
-        
-        // 我们必须把任务状态“回滚” (Rollback)
-        task_repo_->RevertTaskToPending(task.task_id());
-        
-        // (可选: 立即将 Worker 标记为死亡, 但我们的巡检线程最终会处理的)
-        return;
-    }
+  // 5. 结果处理
+  if (!status.ok()) {
+    LOG_ERROR << "RPC failed sending task " << task.task_id() << " to "
+              << worker.address << ": " << status.error_message();
 
-    // (可选) 检查 Worker 是否在 *业务上* 拒绝了任务
-    if (response.header().has_error()) {
-        std::cerr << "[SchedulerLoop] Worker " << worker.worker_id 
-                  << " REJECTED task " << task.task_id() << ": " 
-                  << response.header().error().msg() << std::endl;
-        
-        // Worker 拒绝了, 同样回滚
-        task_repo_->RevertTaskToPending(task.task_id());
-        return;
-    }
-    
-    // 派发成功！
-    // 球现在踢给了 worker, 我们等待它稍后回调 UpdateTaskStatus
-    std::cout << "[SchedulerLoop] Dispatched task " << task.task_id() 
-              << " to worker " << worker.worker_id << std::endl;
+    // 回滚状态，让任务能被重新调度
+    task_repo_->RevertTaskToPending(task.task_id());
+    return;
+  }
+
+  if (response.header().has_error()) {
+    LOG_WARN << "Worker " << worker.worker_id << " rejected task "
+             << task.task_id() << ": " << response.header().error().msg();
+    task_repo_->RevertTaskToPending(task.task_id());
+    return;
+  }
+
+  LOG_INFO << "Successfully dispatched task " << task.task_id() << " to "
+           << worker.worker_id;
 }
 
+std::shared_ptr<dts::internal::WorkerService::Stub>
+SchedulerLoop::GetWorkerStub(const std::string& address) {
+  std::lock_guard<std::mutex> lock(stub_cache_mtx_);
 
-// -----------------------------------------------------
-// 辅助：gRPC Stub 缓存
-// -----------------------------------------------------
-std::shared_ptr<dts::internal::WorkerService::Stub> SchedulerLoop::GetWorkerStub(
-    const std::string& address
-) {
-    std::shared_ptr<grpc::Channel> channel;
+  auto it = channel_cache_.find(address);
+  if (it == channel_cache_.end()) {
+    // 创建新 Channel
+    // 可以在这里加一些 Channel 参数，比如 KeepAlive
+    grpc::ChannelArguments args;
+    args.SetInt(GRPC_ARG_KEEPALIVE_TIME_MS, 10000);
+    auto channel = grpc::CreateCustomChannel(
+        address, grpc::InsecureChannelCredentials(), args);
 
-    // 1. (上锁) 检查缓存
-    {
-        std::lock_guard<std::mutex> lock(stub_cache_mtx_);
-        auto it = channel_cache_.find(address);
-        if (it != channel_cache_.end()) {
-            channel = it->second;
-        }
-    } // (解锁)
-
-    // 2. 如果没找到, 创建新的 Channel
-    if (channel == nullptr) {
-        channel = grpc::CreateChannel(address, grpc::InsecureChannelCredentials());
-        
-        // 3. (上锁) 存入缓存
-        {
-            std::lock_guard<std::mutex> lock(stub_cache_mtx_);
-            channel_cache_[address] = channel;
-        }
-    }
-
-    // 4. Stubs 是轻量级的, 可以每次都创建
+    channel_cache_[address] = channel;
     return dts::internal::WorkerService::NewStub(channel);
+  }
+
+  return dts::internal::WorkerService::NewStub(it->second);
 }
+
+}  // namespace scheduler
+}  // namespace dts

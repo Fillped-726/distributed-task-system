@@ -11,37 +11,40 @@
 #include <memory>
 #include <atomic>
 #include <functional>
-#include "thread_pool.hpp"
+#include "thread_pool.h"
 #include "task.hpp"
 #include "utils.hpp"
 #include "converters.hpp"
 #include "async_tags.hpp"
 #include <mutex>
 
+using dts::common::ThreadPool;
+
 namespace dts {
 
 // ---------- 客户端 ----------
 class GrpcClient {
-public:
-    GrpcClient(const std::string& target);
-    virtual ~GrpcClient();
+ public:
+  GrpcClient(const std::string& target);
+  virtual ~GrpcClient();
 
-    void CompleteRpc();
-    virtual SubmitDagResponse submit_dag_sync(const PbSubmitDagRequest& req);
-    bool cancel_task(const std::string& task_id);
-    Task query_status(const std::string& task_id);
-    void listen_results(const std::string& client_id, DagCallback callback);
-    std::future<SubmitDagResponse> submit_dag_async(const PbSubmitDagRequest& req, DagCallback callback = nullptr);
-    std::future<bool> cancel_task_async(const std::string& task_id);
-    std::future<Task> query_status_async(const std::string& task_id);
+  void CompleteRpc();
+  virtual SubmitDagResponse submit_dag_sync(const PbSubmitDagRequest& req);
+  bool cancel_task(const std::string& task_id);
+  Task query_status(const std::string& task_id);
+  void listen_results(const std::string& client_id, DagCallback callback);
+  std::future<SubmitDagResponse> submit_dag_async(
+      const PbSubmitDagRequest& req, DagCallback callback = nullptr);
+  std::future<bool> cancel_task_async(const std::string& task_id);
+  std::future<Task> query_status_async(const std::string& task_id);
 
-private:
-    std::shared_ptr<grpc::Channel> channel_;
-    std::unique_ptr<TaskService::Stub> stub_;
-    grpc::CompletionQueue cq_;
-    std::shared_ptr<ThreadPool> thread_pool_;
-    std::atomic<bool> shutdown_{false};
-    std::thread cq_thread_;
+ private:
+  std::shared_ptr<grpc::Channel> channel_;
+  std::unique_ptr<TaskService::Stub> stub_;
+  grpc::CompletionQueue cq_;
+  std::shared_ptr<ThreadPool> thread_pool_;
+  std::atomic<bool> shutdown_{false};
+  std::thread cq_thread_;
 };
 
-}   // namespace dts
+}  // namespace dts

@@ -154,13 +154,7 @@ set(FETCHCONTENT_OVERRIDE_FIND_PACKAGE_PostgreSQL TRUE)
 FetchContent_MakeAvailable(libpqxx)
 
 # ---------- 业务 ----------
-add_subdirectory(src/common)
-add_subdirectory(src/api-server)
-add_subdirectory(src/worker/task-executor)
-add_subdirectory(src/client)
-add_subdirectory(src/api-web)
-add_subdirectory(src/scheduler)
-add_subdirectory(src/worker)
+add_subdirectory(src)
 
 # ---------- 测试 ----------
 enable_testing()

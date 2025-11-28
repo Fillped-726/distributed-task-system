@@ -1,48 +1,48 @@
-# --- 1. 定义 API 服务器库 (api_web_lib) ---
+cmake_minimum_required(VERSION 3.20)
+project(dts_api_web LANGUAGES CXX)
 
-set(API_WEB_LIB_SOURCES
+#----------------------------------------------------------
+# 1. 核心业务库 (Static Library)
+#----------------------------------------------------------
+add_library(dts_api_web_core STATIC
     src/api_web.cpp
 )
 
-# 定义库
-add_library(api_web_lib ${API_WEB_LIB_SOURCES})
+# 强制 C++20 (根据你的原配置)
+target_compile_features(dts_api_web_core PUBLIC cxx_std_20)
 
-# 设置 C++ 标准
-set_target_properties(api_web_lib PROPERTIES
-    CXX_STANDARD 20
-    CXX_STANDARD_REQUIRED ON
-)
-
-# 设置包含目录
-target_include_directories(api_web_lib
+# 头文件路径 (Modern CMake 写法)
+target_include_directories(dts_api_web_core
     PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
 )
 
-# 链接库的依赖
-target_link_libraries(api_web_lib    
-    PRIVATE
-        client
-        httplib::httplib
+# 链接依赖
+target_link_libraries(dts_api_web_core
+    PUBLIC
+        dts_client              # <--- [关键] 使用我们定义的 SDK 库
+        httplib::httplib        # Web 框架
         nlohmann_json::nlohmann_json
+        glog::glog              # 建议加上日志库
 )
 
-# --- 2. 定义可执行文件 (my_dts_server) ---
+#----------------------------------------------------------
+# 2. 可执行文件 (入口)
+#----------------------------------------------------------
+# 建议改名 dts_api_web，方便在 bin 目录查找
+add_executable(dts_api_web src/main.cpp)
 
-add_executable(my_dts_server
-    src/main.cpp
-)
-
-# --- 3. 链接可执行文件 ---
-
-target_link_libraries(my_dts_server
+target_link_libraries(dts_api_web
     PRIVATE
-        client
-        api_web_lib
+        dts_api_web_core
 )
 
-# C++ 标准也应用到可执行文件
-set_target_properties(my_dts_server PROPERTIES
-    CXX_STANDARD 20
-    CXX_STANDARD_REQUIRED ON
+#----------------------------------------------------------
+# 3. 安装规则
+#----------------------------------------------------------
+include(GNUInstallDirs)
+
+install(TARGETS dts_api_web
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )

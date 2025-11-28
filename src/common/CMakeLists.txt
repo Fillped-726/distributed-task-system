@@ -1,171 +1,112 @@
 cmake_minimum_required(VERSION 3.20)
-project(Common LANGUAGES CXX)
+project(dts_common)
 
-# ---- 2. 路径宏 ----
-set(PROTO_ROOT      "${CMAKE_CURRENT_SOURCE_DIR}/proto")
-set(PROTO_OUT_ROOT  "${CMAKE_CURRENT_BINARY_DIR}/src/common/generated")
-file(MAKE_DIRECTORY "${PROTO_OUT_ROOT}")
+# ---- 1. 确定路径 (依赖根目录 FetchContent 产生的变量) ----
+# 这里的变量 protobuf_SOURCE_DIR 由根目录 FetchContent_MakeAvailable(grpc) 递归产生
+if(NOT DEFINED protobuf_SOURCE_DIR)
+    message(FATAL_ERROR "protobuf_SOURCE_DIR is not defined. Ensure FetchContent is executed in root CMakeLists.txt")
+endif()
 
-# import 根目录
-list(APPEND PROTO_IMPORT_DIRS "${PROTO_ROOT}")
-# 让 dts/common/resource.proto 能被 import
-list(APPEND PROTO_IMPORT_DIRS "${PROTO_ROOT}")
+set(PROTOBUF_STD_INC_DIR "${protobuf_SOURCE_DIR}/src")
+set(PROTO_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/proto")
+set(PROTO_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+file(MAKE_DIRECTORY ${PROTO_GEN_DIR})
 
-# ---- 3. 封装函数（与之前相同，但不再 find_package） ----
-function(dts_proto_target TARGET_NAME PROTO_FILE)
-    get_filename_component(_ABS_PROTO "${PROTO_FILE}" ABSOLUTE)
+# ---- 2. 定义 Proto 文件 ----
+set(DTS_PROTO_FILES
+    dts/common/resource.proto
+    dts/common/shard.proto
+    dts/error/error.proto
+    dts/error/job_error.proto
+    dts/error/sys_error.proto
+    dts/task/task_state.proto
+    dts/task/task.proto
+    dts/internal/internal_service.proto
+    dts/service/task_service.proto
+)
 
-    file(RELATIVE_PATH _REL_PROTO "${PROTO_ROOT}" "${_ABS_PROTO}")
+# ---- 3. 批量生成 Proto 代码 ----
+set(PROTO_SRCS)
+set(PROTO_HDRS)
 
-    string(REGEX REPLACE "\\.proto$" "" _REL_PROTO_WE "${_REL_PROTO}")
+foreach(PROTO_REL ${DTS_PROTO_FILES})
+    set(_ABS_FILE "${PROTO_SRC_DIR}/${PROTO_REL}")
+    
+    # 计算文件名 (e.g. dts/task/task)
+    string(REGEX REPLACE "\\.proto$" "" _FILE_WE ${PROTO_REL})
+    
+    set(_PB_CC   "${PROTO_GEN_DIR}/${_FILE_WE}.pb.cc")
+    set(_PB_H    "${PROTO_GEN_DIR}/${_FILE_WE}.pb.h")
+    set(_GRPC_CC "${PROTO_GEN_DIR}/${_FILE_WE}.grpc.pb.cc")
+    set(_GRPC_H  "${PROTO_GEN_DIR}/${_FILE_WE}.grpc.pb.h")
 
-    set(_PB_HDR "${PROTO_OUT_ROOT}/${_REL_PROTO_WE}.pb.h")
-    set(_PB_SRC "${PROTO_OUT_ROOT}/${_REL_PROTO_WE}.pb.cc")
-    set(_GRPC_HDR "${PROTO_OUT_ROOT}/${_REL_PROTO_WE}.grpc.pb.h")
-    set(_GRPC_SRC "${PROTO_OUT_ROOT}/${_REL_PROTO_WE}.grpc.pb.cc")
-
-    get_filename_component(_OUT_DIR "${_PB_SRC}" DIRECTORY)
-    file(MAKE_DIRECTORY "${_OUT_DIR}")
+    get_filename_component(_OUT_DIR ${_PB_CC} DIRECTORY)
+    file(MAKE_DIRECTORY ${_OUT_DIR})
 
     add_custom_command(
-        OUTPUT  ${_PB_SRC} ${_PB_HDR} ${_GRPC_SRC} ${_GRPC_HDR}
-        COMMAND protobuf::protoc
-        ARGS --proto_path=${PROTO_ROOT}
-             --proto_path=${protobuf_SOURCE_DIR}/src
-             --cpp_out=${PROTO_OUT_ROOT}
-             --grpc_out=${PROTO_OUT_ROOT}
+        OUTPUT ${_PB_CC} ${_PB_H} ${_GRPC_CC} ${_GRPC_H}
+        
+        # [关键修复] 使用生成器表达式获取 protoc 可执行文件
+        COMMAND $<TARGET_FILE:protobuf::protoc>
+        
+        ARGS --proto_path=${PROTO_SRC_DIR}
+             # [关键修复] 指定标准库路径 (解决 google/protobuf/struct.proto not found)
+             --proto_path=${PROTOBUF_STD_INC_DIR}
+             --cpp_out=${PROTO_GEN_DIR}
+             --grpc_out=${PROTO_GEN_DIR}
+             # [关键修复] 使用生成器表达式获取 gRPC 插件路径
              --plugin=protoc-gen-grpc=$<TARGET_FILE:grpc_cpp_plugin>
-             "${_ABS_PROTO}"
-        DEPENDS "${_ABS_PROTO}" protobuf::protoc grpc_cpp_plugin
-        COMMENT "Protoc ${_REL_PROTO_WE}" # 使用新变量
+             ${_ABS_FILE}
+             
+        # [关键修复] 显式依赖这两个 Target，确保它们先被编译出来
+        DEPENDS ${_ABS_FILE} protobuf::protoc grpc_cpp_plugin
+        
+        COMMENT "Generating gRPC files for ${_FILE_WE}"
         VERBATIM
     )
 
-    add_library(${TARGET_NAME} INTERFACE)
-    target_include_directories(${TARGET_NAME} INTERFACE
-        "$<BUILD_INTERFACE:${PROTO_OUT_ROOT}>"
-        "$<INSTALL_INTERFACE:include>"
-    )
-    target_link_libraries(${TARGET_NAME} INTERFACE
-        protobuf::libprotobuf
-        grpc++
-    )
-    add_custom_target(${TARGET_NAME}.sources SOURCES
-        ${_PB_HDR} ${_PB_SRC} ${_GRPC_HDR} ${_GRPC_SRC}
-    )
-endfunction()
+    list(APPEND PROTO_SRCS ${_PB_CC} ${_GRPC_CC})
+    list(APPEND PROTO_HDRS ${_PB_H} ${_GRPC_H})
+endforeach()
 
-set(_ALL_PROTO_SRCS)
-set(_ALL_PROTO_HDRS)
-# ---- 4. 逐个 proto 建立 target ----
-dts_proto_target(dts.internal.internal_service   proto/dts/internal/internal_service.proto)
-list(APPEND _ALL_PROTO_SRCS "${PROTO_OUT_ROOT}/dts/internal/internal_service.pb.cc") 
-list(APPEND _ALL_PROTO_SRCS "${PROTO_OUT_ROOT}/dts/internal/internal_service.grpc.pb.cc")
-list(APPEND _ALL_PROTO_HDRS "${PROTO_OUT_ROOT}/dts/internal/internal_service.pb.h")
-
-dts_proto_target(dts.common.resource   proto/dts/common/resource.proto)
-list(APPEND _ALL_PROTO_SRCS "${PROTO_OUT_ROOT}/dts/common/resource.pb.cc") 
-list(APPEND _ALL_PROTO_HDRS "${PROTO_OUT_ROOT}/dts/common/resource.pb.h")
-
-dts_proto_target(dts.common.shard      proto/dts/common/shard.proto)
-list(APPEND _ALL_PROTO_SRCS "${PROTO_OUT_ROOT}/dts/common/shard.pb.cc") 
-list(APPEND _ALL_PROTO_HDRS "${PROTO_OUT_ROOT}/dts/common/shard.pb.h")
-
-dts_proto_target(dts.error.error       proto/dts/error/error.proto)
-list(APPEND _ALL_PROTO_SRCS "${PROTO_OUT_ROOT}/dts/error/error.pb.cc") 
-list(APPEND _ALL_PROTO_HDRS "${PROTO_OUT_ROOT}/dts/error/error.pb.h")
-
-dts_proto_target(dts.error.job_error   proto/dts/error/job_error.proto)
-list(APPEND _ALL_PROTO_SRCS "${PROTO_OUT_ROOT}/dts/error/job_error.pb.cc") 
-list(APPEND _ALL_PROTO_HDRS "${PROTO_OUT_ROOT}/dts/error/job_error.pb.h")
-
-dts_proto_target(dts.error.sys_error   proto/dts/error/sys_error.proto)
-list(APPEND _ALL_PROTO_SRCS "${PROTO_OUT_ROOT}/dts/error/sys_error.pb.cc") 
-list(APPEND _ALL_PROTO_HDRS "${PROTO_OUT_ROOT}/dts/error/sys_error.pb.h")
-
-dts_proto_target(dts.task.state        proto/dts/task/task_state.proto)
-list(APPEND _ALL_PROTO_SRCS "${PROTO_OUT_ROOT}/dts/task/task_state.pb.cc")
-list(APPEND _ALL_PROTO_HDRS "${PROTO_OUT_ROOT}/dts/task/task_state.pb.h")
-
-dts_proto_target(dts.task              proto/dts/task/task.proto)
-list(APPEND _ALL_PROTO_SRCS "${PROTO_OUT_ROOT}/dts/task/task.pb.cc")
-list(APPEND _ALL_PROTO_HDRS "${PROTO_OUT_ROOT}/dts/task/task.pb.h")
-
-dts_proto_target(dts.service.task      proto/dts/service/task_service.proto)
-list(APPEND _ALL_PROTO_SRCS "${PROTO_OUT_ROOT}/dts/service/task_service.pb.cc")
-list(APPEND _ALL_PROTO_SRCS "${PROTO_OUT_ROOT}/dts/service/task_service.grpc.pb.cc") 
-list(APPEND _ALL_PROTO_HDRS "${PROTO_OUT_ROOT}/dts/service/task_service.pb.h")
-list(APPEND _ALL_PROTO_HDRS "${PROTO_OUT_ROOT}/dts/service/task_service.grpc.pb.h") 
-
-# ---- 5. 建立依赖链 ----
-target_link_libraries(dts.task         INTERFACE dts.common.resource dts.task.state)
-target_link_libraries(dts.service.task INTERFACE dts.task)
-target_link_libraries(dts.internal.internal_service INTERFACE dts.task dts.error.error)
-
-# ---- 6. INSTALL / EXPORT （2025 必备） ----
-include(GNUInstallDirs)
-install(DIRECTORY "${PROTO_OUT_ROOT}/"
-        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
-        FILES_MATCHING PATTERN "*.h")       
-
-# ---------- 库 ----------
-add_library(common_core STATIC
+# ---- 4. 定义 dts_common 库 ----
+add_library(dts_common STATIC
     src/logger.cpp
     src/config.cpp
     src/exceptions.cpp
-    src/thread_pool.cpp
     src/converters.cpp
-    ${_ALL_PROTO_SRCS}
+    ${PROTO_SRCS}
 )
 
-# 关键：PIC + 导出头文件 + 三方 include
-set_target_properties(common_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
-
-target_include_directories(common_core
+# ---- 5. 包含路径 ----
+target_include_directories(dts_common
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${PROTO_OUT_ROOT}>
-        $<BUILD_INTERFACE:${grpc_SOURCE_DIR}/third_party/protobuf/src>
-        $<BUILD_INTERFACE:${grpc_SOURCE_DIR}/third_party/abseil-cpp>
-    # 安装头文件放到 common/ 子目录，避免冲突
-        $<INSTALL_INTERFACE:include/common>   
+        $<BUILD_INTERFACE:${PROTO_GEN_DIR}>
+        $<INSTALL_INTERFACE:include>
 )
 
-target_link_libraries(common_core
+# ---- 6. 链接依赖 ----
+# 注意：使用你要求的 grpc++ (非 namespaced)
+target_link_libraries(dts_common
     PUBLIC
-        Boost::system
-        Boost::filesystem
+        protobuf::libprotobuf
+        grpc++              
         nlohmann_json::nlohmann_json
         glog::glog
-        dts.common.resource
-        dts.task.state
-        dts.task
-        dts.service.task
-        dts.internal.internal_service
-    PRIVATE
-        protobuf::libprotobuf
-        grpc++
+        libpqxx::pqxx
+        Boost::system
+        Boost::filesystem
+        Boost::uuid
 )
 
-# ---------- 接口库（只导出头文件 + 依赖） ----------
-add_library(common INTERFACE)
-target_link_libraries(common INTERFACE common_core)
-target_include_directories(common INTERFACE
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<BUILD_INTERFACE:${PROTO_BINARY_DIR}>
-    $<INSTALL_INTERFACE:include/common>
+# ---- 7. 安装规则 ----
+include(GNUInstallDirs)
+install(TARGETS dts_common
+    EXPORT DtsTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
-
-# ---------- install ----------
-# 把静态库 + 头文件 + 导出文件一起装
-install(TARGETS common_core common
-        ARCHIVE DESTINATION lib
-        LIBRARY DESTINATION lib
-        RUNTIME DESTINATION bin
-        # 关键：不写 EXPORT 参数！
-)
-
-install(DIRECTORY include/
-        DESTINATION include/common
-        FILES_MATCHING PATTERN "*.hpp"
-)
+install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(DIRECTORY ${PROTO_GEN_DIR}/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} FILES_MATCHING PATTERN "*.h")
