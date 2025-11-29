@@ -27,7 +27,7 @@ graph TD
     User[Client / Web UI] -->|HTTP JSON| Gateway[API Gateway]
     
     %% 变更点：Gateway 指向 API Server，不再直接给 Scheduler
-    APIWeb -->|RPC / HTTP| APIServer[API Server]
+    Gateway -->|RPC / HTTP| APIServer[API Server]
     
     %% 变更点：API Server 将任务存入 DB
     APIServer -->|Insert Task| DB[(PostgreSQL)]
