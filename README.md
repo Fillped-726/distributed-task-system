@@ -128,7 +128,7 @@ docker-compose up \-d \--build
 
 ## **📊 性能表现 (Performance)**
 
-*测试环境：Intel i7-12700H, 16GB RAM*
+*测试环境：Ultra 7 255HX, 16GB RAM*
 
 * **并发调度**: 单 Scheduler 支持 500+ QPS 任务分发。  
 * **调度延迟**: 平均调度延迟 \< 10ms。
