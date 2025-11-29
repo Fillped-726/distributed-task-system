@@ -24,19 +24,27 @@
 
 ```mermaid
 graph TD
-    User[Client / Web UI] -->|HTTP JSON| API[API Gateway]
-    API -->|gRPC| Scheduler[Scheduler Core]
-
+    User[Client / Web UI] -->|HTTP JSON| Gateway[API Gateway]
+    
+    %% 变更点：Gateway 指向 API Server，不再直接给 Scheduler
+    Gateway -->|RPC / HTTP| APIServer[API Server]
+    
+    %% 变更点：API Server 将任务存入 DB
+    APIServer -->|Insert Task| DB[(PostgreSQL)]
+    
+    %% 变更点：Scheduler 从 DB 获取数据
+    Scheduler[Scheduler Core] -->|Poll / Fetch| DB
+    
     subgraph Service Mesh
         Scheduler -->|gRPC / Assign| W1[Worker Node 1]
         Scheduler -->|gRPC / Assign| W2[Worker Node 2]
-        Scheduler -->|Heartbeat| W1
-        Scheduler -->|Heartbeat| W2
     end
 
-    Scheduler -->|Tx / CRUD| DB[(PostgreSQL)]
     W1 -.->|Update Status| Scheduler
     W2 -.->|Update Status| Scheduler
+    
+    %% Scheduler 更新 DB 状态
+    Scheduler -->|Update State| DB
 ```
 
 ### **2\. 任务状态流转机 (State Machine)**
