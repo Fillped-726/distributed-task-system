@@ -23,35 +23,35 @@
 ### **1\. 微服务拓扑图**
 
 ```mermaid
-graph TD  
-    User\[Client / Web UI\] \--\>|HTTP JSON| API\[API Gateway\]  
-    API \--\>|gRPC| Scheduler\[Scheduler Core\]  
-      
-    subgraph Service Mesh  
-        Scheduler \--\>|gRPC / Assign| W1\[Worker Node 1\]  
-        Scheduler \--\>|gRPC / Assign| W2\[Worker Node 2\]  
-        Scheduler \--\>|Heartbeat| W1  
-        Scheduler \--\>|Heartbeat| W2  
-    end  
-      
-    Scheduler \--\>|Tx / CRUD| DB\[(PostgreSQL)\]  
-    W1 \-.-\>|Update Status| Scheduler  
-    W2 \-.-\>|Update Status| Scheduler
+graph TD
+    User[Client / Web UI] -->|HTTP JSON| API[API Gateway]
+    API -->|gRPC| Scheduler[Scheduler Core]
+
+    subgraph Service Mesh
+        Scheduler -->|gRPC / Assign| W1[Worker Node 1]
+        Scheduler -->|gRPC / Assign| W2[Worker Node 2]
+        Scheduler -->|Heartbeat| W1
+        Scheduler -->|Heartbeat| W2
+    end
+
+    Scheduler -->|Tx / CRUD| DB[(PostgreSQL)]
+    W1 -.->|Update Status| Scheduler
+    W2 -.->|Update Status| Scheduler
 ```
 
 ### **2\. 任务状态流转机 (State Machine)**
 
 ```mermaid
-stateDiagram-v2  
-    \[\*\] \--\> PENDING: Submit  
-    PENDING \--\> RUNNING: Scheduler Dispatch  
-    RUNNING \--\> SUCCESS: Worker Callback  
-    RUNNING \--\> FAILED: Worker Callback  
-      
-    RUNNING \--\> PENDING: ⚠️ Worker Crash (Fault Tolerance)  
-    FAILED \--\> PENDING: Manual Retry  
-      
-    SUCCESS \--\> \[\*\]
+stateDiagram-v2
+    [*] --> PENDING: Submit
+    PENDING --> RUNNING: Scheduler Dispatch
+    RUNNING --> SUCCESS: Worker Callback
+    RUNNING --> FAILED: Worker Callback
+
+    RUNNING --> PENDING: ⚠️ Worker Crash (Fault Tolerance)
+    FAILED --> PENDING: Manual Retry
+
+    SUCCESS --> [*]
 ```
 
 ## **🛠 技术栈 (Tech Stack)**
