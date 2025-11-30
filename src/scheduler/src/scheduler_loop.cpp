@@ -14,9 +14,9 @@ SchedulerLoop::SchedulerLoop(std::shared_ptr<TaskRepository> task_repo,
   if (!task_repo_ || !worker_manager_) {
     LOG_FATAL << "SchedulerLoop initialized with null dependencies";
   }
-  dispatch_pool_ = std::make_unique<dts::common::ThreadPool>(8);
+  dispatch_pool_ = std::make_unique<dts::common::ThreadPool>(112);
 
-  LOG_INFO << "SchedulerLoop initialized with dispatch thread pool size: 8";
+  LOG_INFO << "SchedulerLoop initialized with dispatch thread pool size: 24";
   LOG_INFO << "SchedulerLoop initialized.";
 }
 
@@ -39,8 +39,8 @@ void SchedulerLoop::Stop() {
 }
 
 void SchedulerLoop::RunLoop() {
-  const int BATCH_SIZE = 20;
-  const int WORKER_CAPACITY = 10;
+  const int BATCH_SIZE = 120;
+  const int WORKER_CAPACITY = 60;
 
   while (!stop_flag_) {
     try {
@@ -57,7 +57,7 @@ void SchedulerLoop::RunLoop() {
       if (workers.empty()) {
         LOG_WARN << "Pending tasks found (" << tasks.size()
                  << ") but no workers available!";
-        std::this_thread::sleep_for(std::chrono::seconds(5));
+        std::this_thread::sleep_for(std::chrono::seconds(1));
         continue;
       }
 
@@ -99,10 +99,9 @@ void SchedulerLoop::RunLoop() {
       // 4. Sleep Strategy
       if (dispatched_count == 0 && !tasks.empty()) {
         // 有任务但派发不出去（集群满载），快速重试
+        LOG_WARN << "need worker";
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
       } else {
-        // 正常间隔
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
       }
 
     } catch (const std::exception& e) {
@@ -141,9 +140,20 @@ void SchedulerLoop::DoDispatch(const dts::task::Task& task,
                        std::chrono::seconds(5));
 
   // 4. RPC 调用
+  auto rpc_start = std::chrono::steady_clock::now();
   grpc::Status status = stub->RunTask(&context, request, &response);
+  auto rpc_end = std::chrono::steady_clock::now();
+  auto rpc_duration = rpc_end - rpc_start;
 
   // 5. 结果处理
+  if (rpc_duration >
+      std::chrono::milliseconds(50)) {  // 如果 RPC 超过 50ms，立即警告！
+    LOG_WARN << "RPC to worker " << worker.worker_id << " took too long: "
+             << std::chrono::duration_cast<std::chrono::milliseconds>(
+                    rpc_duration)
+                    .count()
+             << "ms. Network/Worker overloaded!";
+  }
   if (!status.ok()) {
     LOG_ERROR << "RPC failed sending task " << task.task_id() << " to "
               << worker.address << ": " << status.error_message();

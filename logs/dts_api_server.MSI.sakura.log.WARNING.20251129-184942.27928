@@ -1,0 +1,5 @@
+Log file created at: 2025/11/29 18:49:42
+Running on machine: MSI
+Running duration (h:mm:ss): 0:00:00
+Log line format: [IWEF]yyyymmdd hh:mm:ss.uuuuuu threadid file:line] msg
+W20251129 18:49:42.574672 27928 main.cpp:21] Caught signal 2, shutting down...

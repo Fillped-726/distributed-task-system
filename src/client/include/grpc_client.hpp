@@ -25,7 +25,8 @@ namespace dts {
 // ---------- 客户端 ----------
 class GrpcClient {
  public:
-  GrpcClient(const std::string& target);
+  explicit GrpcClient(const std::string& target);
+  explicit GrpcClient(std::shared_ptr<grpc::Channel> channel);
   virtual ~GrpcClient();
 
   void CompleteRpc();

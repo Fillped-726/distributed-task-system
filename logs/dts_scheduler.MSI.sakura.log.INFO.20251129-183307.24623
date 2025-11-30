@@ -1,0 +1,9 @@
+Log file created at: 2025/11/29 18:33:07
+Running on machine: MSI
+Running duration (h:mm:ss): 0:00:00
+Log line format: [IWEF]yyyymmdd hh:mm:ss.uuuuuu threadid file:line] msg
+I20251129 18:33:07.204207 24623 logger.hpp:55] Glog initialized. Log dir: ./logs
+I20251129 18:33:07.204429 24623 main.cpp:90] [ReqID:-] Scheduler process starting...
+I20251129 18:33:07.204439 24623 main.cpp:120] [ReqID:-] Initializing components...
+I20251129 18:33:07.204443 24623 database_pool.h:28] Initializing DatabasePool with size: 50
+F20251129 18:33:07.487731 24623 database_pool.h:40] Failed to create DB connection: connection to server at "127.0.0.1", port 5432 failed: FATAL:  sorry, too many clients already

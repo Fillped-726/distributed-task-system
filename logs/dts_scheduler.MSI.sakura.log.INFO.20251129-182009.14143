@@ -1,0 +1,132 @@
+Log file created at: 2025/11/29 18:20:09
+Running on machine: MSI
+Running duration (h:mm:ss): 0:00:00
+Log line format: [IWEF]yyyymmdd hh:mm:ss.uuuuuu threadid file:line] msg
+I20251129 18:20:09.443126 14143 logger.hpp:55] Glog initialized. Log dir: ./logs
+I20251129 18:20:09.443396 14143 main.cpp:90] [ReqID:-] Scheduler process starting...
+I20251129 18:20:09.443408 14143 main.cpp:120] [ReqID:-] Initializing components...
+I20251129 18:20:09.443413 14143 database_pool.h:28] Initializing DatabasePool with size: 10
+I20251129 18:20:09.533717 14143 worker_manager.cpp:11] [ReqID:-] WorkerManager initialized. Timeout: 30s
+I20251129 18:20:09.533776 14143 task_repository.cpp:19] [ReqID:-] TaskRepository initialized.
+I20251129 18:20:09.534303 14143 scheduler_loop.cpp:19] [ReqID:-] SchedulerLoop initialized with dispatch thread pool size: 8
+I20251129 18:20:09.534317 14143 scheduler_loop.cpp:20] [ReqID:-] SchedulerLoop initialized.
+I20251129 18:20:09.534369 14143 scheduler_service_impl.cpp:28] [ReqID:-] SchedulerServiceImpl started.
+I20251129 18:20:09.559008 14143 main.cpp:150] [ReqID:-] gRPC Server listening on 0.0.0.0:9090
+I20251129 18:20:09.559046 14143 scheduler_loop.cpp:27] [ReqID:-] SchedulerLoop starting...
+I20251129 18:20:09.559178 14143 main.cpp:159] [ReqID:-] Scheduler is running. Press Ctrl+C to stop.
+I20251129 18:20:09.559230 14175 main.cpp:47] [ReqID:PATROL] PatrolLoop started.
+I20251129 18:20:51.440775 14173 scheduler_service_impl.cpp:44] [ReqID:REG-worker-01] [Register] Worker registering from: 0.0.0.0:50051
+I20251129 18:20:51.440850 14173 worker_manager.cpp:34] [ReqID:REG-worker-01] New Worker registered. ID: worker-01, Addr: 0.0.0.0:50051
+I20251129 18:20:51.442090 14173 scheduler_service_impl.cpp:72] [Heartbeat] Sampled log from worker-01
+I20251129 18:25:20.783546 14155 scheduler_loop.cpp:163] [ReqID:DISP-0b5a8198-a88b-4704-87bd-473669bacae8] Successfully dispatched task 0b5a8198-a88b-4704-87bd-473669bacae8 to worker-01
+I20251129 18:25:20.784379 14159 scheduler_loop.cpp:163] [ReqID:DISP-2a5e9a20-4ad8-4b38-b39e-c485a06f5189] Successfully dispatched task 2a5e9a20-4ad8-4b38-b39e-c485a06f5189 to worker-01
+I20251129 18:25:20.784523 14161 scheduler_loop.cpp:163] [ReqID:DISP-07f853a3-84fc-4ed6-82a2-210cb4059d41] Successfully dispatched task 07f853a3-84fc-4ed6-82a2-210cb4059d41 to worker-01
+I20251129 18:25:20.784574 14160 scheduler_loop.cpp:163] [ReqID:DISP-315c0346-5ca2-435f-8a48-4b786a87656e] Successfully dispatched task 315c0346-5ca2-435f-8a48-4b786a87656e to worker-01
+I20251129 18:25:20.784695 14158 scheduler_loop.cpp:163] [ReqID:DISP-002b04e1-de5e-4bcd-a854-905798813046] Successfully dispatched task 002b04e1-de5e-4bcd-a854-905798813046 to worker-01
+I20251129 18:25:20.785223 14154 scheduler_loop.cpp:163] [ReqID:DISP-2371c3d7-1aaf-4f57-b849-25d31bff635f] Successfully dispatched task 2371c3d7-1aaf-4f57-b849-25d31bff635f to worker-01
+I20251129 18:25:20.785707 14157 scheduler_loop.cpp:163] [ReqID:DISP-1e9f1341-a044-4c85-a6a4-7c0abf863892] Successfully dispatched task 1e9f1341-a044-4c85-a6a4-7c0abf863892 to worker-01
+I20251129 18:25:20.785811 14156 scheduler_loop.cpp:163] [ReqID:DISP-6957832b-aea7-4553-abb6-053bc345e145] Successfully dispatched task 6957832b-aea7-4553-abb6-053bc345e145 to worker-01
+I20251129 18:25:20.792222 14155 scheduler_loop.cpp:163] [ReqID:DISP-1c2a0737-a0dc-41b0-b0d0-645ce868c941] Successfully dispatched task 1c2a0737-a0dc-41b0-b0d0-645ce868c941 to worker-01
+I20251129 18:25:20.793422 14159 scheduler_loop.cpp:163] [ReqID:DISP-079c200e-95a8-45bc-b9e1-f02ffa4d043f] Successfully dispatched task 079c200e-95a8-45bc-b9e1-f02ffa4d043f to worker-01
+I20251129 18:25:20.794585 16815 scheduler_service_impl.cpp:106] [ReqID:UPD-315c0346-5ca2-435f-8a48-4b786a87656e] [UpdateTaskStatus] Task: 315c0346-5ca2-435f-8a48-4b786a87656e, State: SUCCESS
+I20251129 18:25:20.793735 14397 scheduler_service_impl.cpp:106] [ReqID:UPD-0b5a8198-a88b-4704-87bd-473669bacae8] [UpdateTaskStatus] Task: 0b5a8198-a88b-4704-87bd-473669bacae8, State: SUCCESS
+I20251129 18:25:20.794189 14173 scheduler_service_impl.cpp:106] [ReqID:UPD-07f853a3-84fc-4ed6-82a2-210cb4059d41] [UpdateTaskStatus] Task: 07f853a3-84fc-4ed6-82a2-210cb4059d41, State: SUCCESS
+I20251129 18:25:20.794373 16814 scheduler_service_impl.cpp:106] [ReqID:UPD-2a5e9a20-4ad8-4b38-b39e-c485a06f5189] [UpdateTaskStatus] Task: 2a5e9a20-4ad8-4b38-b39e-c485a06f5189, State: SUCCESS
+W20251129 18:25:20.801908 16814 database_pool.h:77] Transaction failed (rollback): ERROR:  invalid input syntax for type json
+DETAIL:  Token "Echo" is invalid.
+CONTEXT:  JSON data, line 1: Echo...
+unnamed portal parameter $2 = '...'
+W20251129 18:25:20.802029 14173 database_pool.h:77] Transaction failed (rollback): ERROR:  invalid input syntax for type json
+DETAIL:  Token "Echo" is invalid.
+CONTEXT:  JSON data, line 1: Echo...
+unnamed portal parameter $2 = '...'
+W20251129 18:25:20.802285 16815 database_pool.h:77] Transaction failed (rollback): ERROR:  invalid input syntax for type json
+DETAIL:  Token "Echo" is invalid.
+CONTEXT:  JSON data, line 1: Echo...
+unnamed portal parameter $2 = '...'
+E20251129 18:25:20.802589 16815 task_repository.cpp:147] [ReqID:UPD-315c0346-5ca2-435f-8a48-4b786a87656e] [TaskRepo] HandleTaskCompletion failed for task 315c0346-5ca2-435f-8a48-4b786a87656e: ERROR:  invalid input syntax for type json
+DETAIL:  Token "Echo" is invalid.
+CONTEXT:  JSON data, line 1: Echo...
+unnamed portal parameter $2 = '...'
+E20251129 18:25:20.804185 16815 scheduler_service_impl.cpp:125] [ReqID:UPD-315c0346-5ca2-435f-8a48-4b786a87656e] [UpdateTaskStatus] Failed to update DAG state for task 315c0346-5ca2-435f-8a48-4b786a87656e
+E20251129 18:25:20.802754 16814 task_repository.cpp:147] [ReqID:UPD-2a5e9a20-4ad8-4b38-b39e-c485a06f5189] [TaskRepo] HandleTaskCompletion failed for task 2a5e9a20-4ad8-4b38-b39e-c485a06f5189: ERROR:  invalid input syntax for type json
+DETAIL:  Token "Echo" is invalid.
+CONTEXT:  JSON data, line 1: Echo...
+unnamed portal parameter $2 = '...'
+E20251129 18:25:20.804823 16814 scheduler_service_impl.cpp:125] [ReqID:UPD-2a5e9a20-4ad8-4b38-b39e-c485a06f5189] [UpdateTaskStatus] Failed to update DAG state for task 2a5e9a20-4ad8-4b38-b39e-c485a06f5189
+E20251129 18:25:20.803483 14173 task_repository.cpp:147] [ReqID:UPD-07f853a3-84fc-4ed6-82a2-210cb4059d41] [TaskRepo] HandleTaskCompletion failed for task 07f853a3-84fc-4ed6-82a2-210cb4059d41: ERROR:  invalid input syntax for type json
+DETAIL:  Token "Echo" is invalid.
+CONTEXT:  JSON data, line 1: Echo...
+unnamed portal parameter $2 = '...'
+E20251129 18:25:20.805730 14173 scheduler_service_impl.cpp:125] [ReqID:UPD-07f853a3-84fc-4ed6-82a2-210cb4059d41] [UpdateTaskStatus] Failed to update DAG state for task 07f853a3-84fc-4ed6-82a2-210cb4059d41
+W20251129 18:25:20.802073 14397 database_pool.h:77] Transaction failed (rollback): ERROR:  invalid input syntax for type json
+DETAIL:  Token "Echo" is invalid.
+CONTEXT:  JSON data, line 1: Echo...
+unnamed portal parameter $2 = '...'
+E20251129 18:25:20.806344 14397 task_repository.cpp:147] [ReqID:UPD-0b5a8198-a88b-4704-87bd-473669bacae8] [TaskRepo] HandleTaskCompletion failed for task 0b5a8198-a88b-4704-87bd-473669bacae8: ERROR:  invalid input syntax for type json
+DETAIL:  Token "Echo" is invalid.
+CONTEXT:  JSON data, line 1: Echo...
+unnamed portal parameter $2 = '...'
+E20251129 18:25:20.806371 14397 scheduler_service_impl.cpp:125] [ReqID:UPD-0b5a8198-a88b-4704-87bd-473669bacae8] [UpdateTaskStatus] Failed to update DAG state for task 0b5a8198-a88b-4704-87bd-473669bacae8
+I20251129 18:25:20.807695 16815 scheduler_service_impl.cpp:106] [ReqID:UPD-002b04e1-de5e-4bcd-a854-905798813046] [UpdateTaskStatus] Task: 002b04e1-de5e-4bcd-a854-905798813046, State: SUCCESS
+W20251129 18:25:20.808864 16815 database_pool.h:77] Transaction failed (rollback): ERROR:  invalid input syntax for type json
+DETAIL:  Token "Echo" is invalid.
+CONTEXT:  JSON data, line 1: Echo...
+unnamed portal parameter $2 = '...'
+E20251129 18:25:20.808982 16815 task_repository.cpp:147] [ReqID:UPD-002b04e1-de5e-4bcd-a854-905798813046] [TaskRepo] HandleTaskCompletion failed for task 002b04e1-de5e-4bcd-a854-905798813046: ERROR:  invalid input syntax for type json
+DETAIL:  Token "Echo" is invalid.
+CONTEXT:  JSON data, line 1: Echo...
+unnamed portal parameter $2 = '...'
+E20251129 18:25:20.809001 16815 scheduler_service_impl.cpp:125] [ReqID:UPD-002b04e1-de5e-4bcd-a854-905798813046] [UpdateTaskStatus] Failed to update DAG state for task 002b04e1-de5e-4bcd-a854-905798813046
+I20251129 18:25:20.809763 16815 scheduler_service_impl.cpp:106] [ReqID:UPD-6957832b-aea7-4553-abb6-053bc345e145] [UpdateTaskStatus] Task: 6957832b-aea7-4553-abb6-053bc345e145, State: SUCCESS
+I20251129 18:25:20.810627 16816 scheduler_service_impl.cpp:106] [ReqID:UPD-1e9f1341-a044-4c85-a6a4-7c0abf863892] [UpdateTaskStatus] Task: 1e9f1341-a044-4c85-a6a4-7c0abf863892, State: SUCCESS
+I20251129 18:25:20.811494 16817 scheduler_service_impl.cpp:106] [ReqID:UPD-2371c3d7-1aaf-4f57-b849-25d31bff635f] [UpdateTaskStatus] Task: 2371c3d7-1aaf-4f57-b849-25d31bff635f, State: SUCCESS
+W20251129 18:25:20.812271 16816 database_pool.h:77] Transaction failed (rollback): ERROR:  invalid input syntax for type json
+DETAIL:  Token "Echo" is invalid.
+CONTEXT:  JSON data, line 1: Echo...
+unnamed portal parameter $2 = '...'
+E20251129 18:25:20.813052 16816 task_repository.cpp:147] [ReqID:UPD-1e9f1341-a044-4c85-a6a4-7c0abf863892] [TaskRepo] HandleTaskCompletion failed for task 1e9f1341-a044-4c85-a6a4-7c0abf863892: ERROR:  invalid input syntax for type json
+DETAIL:  Token "Echo" is invalid.
+CONTEXT:  JSON data, line 1: Echo...
+unnamed portal parameter $2 = '...'
+I20251129 18:25:20.812345 16818 scheduler_service_impl.cpp:106] [ReqID:UPD-1c2a0737-a0dc-41b0-b0d0-645ce868c941] [UpdateTaskStatus] Task: 1c2a0737-a0dc-41b0-b0d0-645ce868c941, State: SUCCESS
+W20251129 18:25:20.813115 16817 database_pool.h:77] Transaction failed (rollback): ERROR:  invalid input syntax for type json
+DETAIL:  Token "Echo" is invalid.
+CONTEXT:  JSON data, line 1: Echo...
+unnamed portal parameter $2 = '...'
+E20251129 18:25:20.813098 16816 scheduler_service_impl.cpp:125] [ReqID:UPD-1e9f1341-a044-4c85-a6a4-7c0abf863892] [UpdateTaskStatus] Failed to update DAG state for task 1e9f1341-a044-4c85-a6a4-7c0abf863892
+W20251129 18:25:20.813546 16815 database_pool.h:77] Transaction failed (rollback): ERROR:  invalid input syntax for type json
+DETAIL:  Token "Echo" is invalid.
+CONTEXT:  JSON data, line 1: Echo...
+unnamed portal parameter $2 = '...'
+E20251129 18:25:20.813683 16815 task_repository.cpp:147] [ReqID:UPD-6957832b-aea7-4553-abb6-053bc345e145] [TaskRepo] HandleTaskCompletion failed for task 6957832b-aea7-4553-abb6-053bc345e145: ERROR:  invalid input syntax for type json
+DETAIL:  Token "Echo" is invalid.
+CONTEXT:  JSON data, line 1: Echo...
+unnamed portal parameter $2 = '...'
+E20251129 18:25:20.815224 16815 scheduler_service_impl.cpp:125] [ReqID:UPD-6957832b-aea7-4553-abb6-053bc345e145] [UpdateTaskStatus] Failed to update DAG state for task 6957832b-aea7-4553-abb6-053bc345e145
+E20251129 18:25:20.814201 16817 task_repository.cpp:147] [ReqID:UPD-2371c3d7-1aaf-4f57-b849-25d31bff635f] [TaskRepo] HandleTaskCompletion failed for task 2371c3d7-1aaf-4f57-b849-25d31bff635f: ERROR:  invalid input syntax for type json
+DETAIL:  Token "Echo" is invalid.
+CONTEXT:  JSON data, line 1: Echo...
+unnamed portal parameter $2 = '...'
+E20251129 18:25:20.816583 16817 scheduler_service_impl.cpp:125] [ReqID:UPD-2371c3d7-1aaf-4f57-b849-25d31bff635f] [UpdateTaskStatus] Failed to update DAG state for task 2371c3d7-1aaf-4f57-b849-25d31bff635f
+W20251129 18:25:20.817163 16818 database_pool.h:77] Transaction failed (rollback): ERROR:  invalid input syntax for type json
+DETAIL:  Token "Echo" is invalid.
+CONTEXT:  JSON data, line 1: Echo...
+unnamed portal parameter $2 = '...'
+E20251129 18:25:20.817333 16818 task_repository.cpp:147] [ReqID:UPD-1c2a0737-a0dc-41b0-b0d0-645ce868c941] [TaskRepo] HandleTaskCompletion failed for task 1c2a0737-a0dc-41b0-b0d0-645ce868c941: ERROR:  invalid input syntax for type json
+DETAIL:  Token "Echo" is invalid.
+CONTEXT:  JSON data, line 1: Echo...
+unnamed portal parameter $2 = '...'
+E20251129 18:25:20.817417 16818 scheduler_service_impl.cpp:125] [ReqID:UPD-1c2a0737-a0dc-41b0-b0d0-645ce868c941] [UpdateTaskStatus] Failed to update DAG state for task 1c2a0737-a0dc-41b0-b0d0-645ce868c941
+I20251129 18:25:20.818519 16815 scheduler_service_impl.cpp:106] [ReqID:UPD-079c200e-95a8-45bc-b9e1-f02ffa4d043f] [UpdateTaskStatus] Task: 079c200e-95a8-45bc-b9e1-f02ffa4d043f, State: SUCCESS
+W20251129 18:25:20.821092 16815 database_pool.h:77] Transaction failed (rollback): ERROR:  invalid input syntax for type json
+DETAIL:  Token "Echo" is invalid.
+CONTEXT:  JSON data, line 1: Echo...
+unnamed portal parameter $2 = '...'
+E20251129 18:25:20.821300 16815 task_repository.cpp:147] [ReqID:UPD-079c200e-95a8-45bc-b9e1-f02ffa4d043f] [TaskRepo] HandleTaskCompletion failed for task 079c200e-95a8-45bc-b9e1-f02ffa4d043f: ERROR:  invalid input syntax for type json
+DETAIL:  Token "Echo" is invalid.
+CONTEXT:  JSON data, line 1: Echo...
+unnamed portal parameter $2 = '...'
+E20251129 18:25:20.821326 16815 scheduler_service_impl.cpp:125] [ReqID:UPD-079c200e-95a8-45bc-b9e1-f02ffa4d043f] [UpdateTaskStatus] Failed to update DAG state for task 079c200e-95a8-45bc-b9e1-f02ffa4d043f
+W20251129 18:25:21.266209 14174 database_pool.h:95] DB Pool is empty, thread is waiting...
+I20251129 18:29:04.593521 16819 scheduler_service_impl.cpp:72] [Heartbeat] Sampled log from worker-01

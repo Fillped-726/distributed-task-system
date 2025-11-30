@@ -30,6 +30,7 @@ struct TaskEdge {
 struct SubmitDagRequest {
   std::string job_id;           // 属于哪个大作业
   std::string idempotency_key;  // 幂等键 (防止网络抖动导致重复提交整个图)
+  std::string client_id;        // 连接id
 
   std::vector<dts::Task> tasks;      // 所有的节点
   std::vector<dts::TaskEdge> edges;  // 所有的边

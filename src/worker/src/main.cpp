@@ -1,69 +1,76 @@
 #include "worker_node.h"
 #include "task_registry.h"
 #include "logger.hpp"
+#include "uuid_generator.hpp"  // 你的公共组件
+
 #include <iostream>
 #include <thread>
 #include <csignal>
+#include <cstdlib>
 
-// 全局指针用于信号处理
 std::unique_ptr<dts::worker::WorkerNode> g_worker_node;
-std::atomic<bool> g_quit{false};
 
-// 信号处理：捕获 Ctrl+C (SIGINT) 实现优雅退出
 void SignalHandler(int signum) {
-    LOG_INFO << "Interrupt signal (" << signum << ") received. Stopping worker...";
-    if (g_worker_node) {
-        g_worker_node->Stop();
-    }
-    g_quit = true;
-}
-
-// --- 定义一些简单的测试任务 ---
-// 实际项目中，这些可能会放在单独的业务 .cpp 文件中，通过链接器自动注册
-std::string FailTask(const std::string& params) {
-    throw std::runtime_error("Simulated intentional failure!");
+  LOG(WARNING) << "Caught signal " << signum << ", shutting down worker...";
+  if (g_worker_node) {
+    g_worker_node->Stop();
+  }
 }
 
 int main(int argc, char** argv) {
-    // 1. 初始化日志
-    dts::InitGlog(argv[0]);
+  // 1. 日志初始化 (适配新版 logger.hpp)
+  dts::InitGlog(argv[0]);
 
-    // 2. 注册业务任务
-    // 使用宏或直接调用 Register
-    dts::worker::TaskRegistry::GetInstance().Register("fail_test", FailTask);
+  // 2. Worker ID 生成
+  std::string base_id = (argc > 1) ? argv[1] : "worker-node";
+  std::string worker_id =
+      base_id + "-" + dts::common::generate();  // 使用 uuid_generator
 
-    // 3. 配置启动参数 (可以通过命令行解析库 gflags 传入)
-    std::string worker_id = "worker-01";
-    std::string server_addr = "0.0.0.0:50051";
-    std::string scheduler_addr = "localhost:9090";
+  dts::SetRequestId("startup-" + worker_id);
 
-    if (argc > 1) worker_id = argv[1];
-    if (argc > 2) server_addr = argv[2];
+  // 3. 配置加载
+  // 监听地址: 默认为 0.0.0.0 以便容器外可访问 (虽然 Worker 主要是 Client
+  // 角色，但如果有回调或状态检查需要监听)
+  std::string bind_addr = "0.0.0.0:50051";
+  if (const char* env_p = std::getenv("WORKER_BIND_ADDR")) {
+    bind_addr = env_p;
+  } else if (argc > 2) {
+    bind_addr = argv[2];
+  }
 
-    LOG_INFO << "Starting DTS Worker Node...";
-    LOG_INFO << "ID: " << worker_id;
-    LOG_INFO << "Listen: " << server_addr;
-    LOG_INFO << "Scheduler: " << scheduler_addr;
+  std::string advertise_addr = bind_addr;
+  if (const char* env_p = std::getenv("WORKER_ADVERTISE_ADDR")) {
+    advertise_addr = env_p;
+  }
 
-    // 4. 创建并启动节点
-    g_worker_node = std::make_unique<dts::worker::WorkerNode>(worker_id, server_addr, scheduler_addr);
-    
-    // 注册信号处理
+  // Scheduler 地址: 容器中通常通过服务名访问，例如 "scheduler:9090"
+  std::string scheduler_addr = "localhost:9090";  // 本地默认值
+  if (const char* env_p = std::getenv("SCHEDULER_ADDR")) {
+    scheduler_addr = env_p;
+  }
+
+  LOG(INFO) << "========================================";
+  LOG(INFO) << "   Worker ID:      " << worker_id;
+  LOG(INFO) << "   Bind Addr:      " << bind_addr;       // 实际监听
+  LOG(INFO) << "   Advertise Addr: " << advertise_addr;  // 告诉 Scheduler 的
+  LOG(INFO) << "   Scheduler:      " << scheduler_addr;
+  LOG(INFO) << "========================================";
+
+  try {
+    g_worker_node = std::make_unique<dts::worker::WorkerNode>(
+        worker_id, bind_addr, scheduler_addr, advertise_addr);
+
     std::signal(SIGINT, SignalHandler);
     std::signal(SIGTERM, SignalHandler);
 
-    // 启动 (这里会连接 Scheduler，如果 Scheduler 没起可能会失败退出，视 WorkerNode 逻辑而定)
     g_worker_node->Start();
-
-    // 5. 阻塞主线程，直到收到信号
-    // 由于 g_worker_node->Start() 中的 grpc server 是异步的 (Wait 逻辑被封装了或者我们没调用 Wait)，
-    // 我们需要在这里保持主线程存活。
-    // *修正*：grpc::Server::Wait() 是阻塞的，但我们在 WorkerNode::Start 里用的是 BuildAndStart()，它是非阻塞的。
-    // 所以我们需要一个 Wait 机制。
-    
-    // 最简单的方法：使用 while 循环检查 g_worker_node 状态，或者使用 condition_variable
-    LOG_INFO << "Worker is running. Press Ctrl+C to stop.";
     g_worker_node->Await();
-    LOG_INFO << "Main loop exited. Bye.";
-    return 0;
+
+  } catch (const std::exception& e) {
+    LOG(FATAL) << "Worker Exception: " << e.what();
+    return 1;
+  }
+
+  LOG(INFO) << "Worker exited cleanly.";
+  return 0;
 }

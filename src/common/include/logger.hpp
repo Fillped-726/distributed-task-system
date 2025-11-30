@@ -34,25 +34,48 @@ inline std::string LogPrefix() {
 
 // ---------- 初始化函数 ----------
 inline void InitGlog(const char* argv0, const std::string& log_dir = "./logs") {
-  // 1. 创建日志目录
-  if (!std::filesystem::exists(log_dir)) {
-    std::filesystem::create_directories(log_dir);
+  // 1. 检测是否在 Docker 容器模式下
+  // 我们约定：如果在 docker-compose 中设置了 ENV
+  // DTS_RUN_MODE=docker，则只输出到屏幕
+  const char* run_mode_env = std::getenv("DTS_RUN_MODE");
+  bool is_docker_mode =
+      (run_mode_env != nullptr && std::string(run_mode_env) == "docker");
+
+  if (is_docker_mode) {
+    // --- 容器模式 ---
+    FLAGS_logtostderr = true;       // 强制只输出到标准错误 (stderr)
+    FLAGS_colorlogtostderr = true;  // 开启颜色
+  } else {
+    if (!std::filesystem::exists(log_dir)) {
+      try {
+        std::filesystem::create_directories(log_dir);
+      } catch (const std::exception& e) {
+        std::cerr << "Failed to create log directory: " << e.what()
+                  << std::endl;
+        FLAGS_logtostderr = true;
+      }
+    }
+
+    // 如果目录存在（或创建成功），则写入文件
+    if (std::filesystem::exists(log_dir)) {
+      FLAGS_log_dir = log_dir;       // 日志输出目录
+      FLAGS_alsologtostderr = true;  // 既输出到文件，也输出到控制台
+      FLAGS_max_log_size = 100;      // 单个日志文件最大 100MB
+      FLAGS_stop_logging_if_full_disk = true;
+    }
   }
 
-  // 2. 基础配置
-  FLAGS_log_dir = log_dir;        // 日志输出目录
-  FLAGS_alsologtostderr = true;   // 既输出到文件，也输出到控制台 (调试方便)
-  FLAGS_colorlogtostderr = true;  // 控制台输出带颜色
-  FLAGS_max_log_size = 100;       // 单个日志文件最大 100MB
-  FLAGS_stop_logging_if_full_disk = true;  // 磁盘满停止写入
-
-  // 3. 初始化
+  // 2. 初始化 Glog
   google::InitGoogleLogging(argv0);
 
-  // 4. 安装信号处理 (比如段错误时打印堆栈) -> 这个很重要！
+  // 3. 安装信号处理
   google::InstallFailureSignalHandler();
 
-  LOG(INFO) << "Glog initialized. Log dir: " << log_dir;
+  if (is_docker_mode) {
+    LOG(INFO) << "Glog initialized in DOCKER mode (Stdout/Stderr only).";
+  } else {
+    LOG(INFO) << "Glog initialized in LOCAL mode. Log dir: " << log_dir;
+  }
 }
 
 }  // namespace dts

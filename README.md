@@ -132,5 +132,7 @@ docker-compose up \-d \--build
 
 * **并发调度**: 单 Scheduler 支持 500+ QPS 任务分发。  
 * **调度延迟**: 平均调度延迟 \< 10ms。
+* **API Submission**:QPS:682; avg : 11.65ms; P50 : 5.58ms; P99 : 67.62ms;
+* **scheduler**: QPS:1207; avg:1.64ms; P50:2.00ms; P95: 3.00ms P99 : 4.00ms;
 
 **Author:** \[郝光磊\]

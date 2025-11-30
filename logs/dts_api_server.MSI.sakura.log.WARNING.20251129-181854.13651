@@ -1,0 +1,5 @@
+Log file created at: 2025/11/29 18:18:54
+Running on machine: MSI
+Running duration (h:mm:ss): 0:00:00
+Log line format: [IWEF]yyyymmdd hh:mm:ss.uuuuuu threadid file:line] msg
+F20251129 18:18:54.360708 13651 main.cpp:49] 关键环境变量 'DATABASE_URL' 未设置。程序无法启动。

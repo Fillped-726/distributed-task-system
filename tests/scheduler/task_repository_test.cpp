@@ -213,3 +213,81 @@ TEST_F(TaskRepositoryTest, RequeueOrphanedTasks) {
     EXPECT_EQ(r2[0]["state"].as<int>(), 1);  // Unchanged
   });
 }
+
+TEST_F(TaskRepositoryTest, DiamondDependency) {
+  // 1. 构造菱形图
+  // A (RUNNING)
+  // B (WAITING, 1)
+  // C (WAITING, 1)
+  // D (WAITING, 2) <-- 重点
+  db_pool->ExecuteTx([this](pqxx::work& tx) {
+    InsertJob(tx, JOB_UUID);
+    InsertTask(tx, TASK_UUID_1, JOB_UUID, 1);     // A
+    InsertTask(tx, TASK_UUID_2, JOB_UUID, 6, 1);  // B
+    InsertTask(tx, TASK_UUID_3, JOB_UUID, 6, 1);  // C
+    InsertTask(tx, TASK_UUID_4, JOB_UUID, 6, 2);  // D
+
+    InsertEdge(tx, JOB_UUID, TASK_UUID_1, TASK_UUID_2);  // A->B
+    InsertEdge(tx, JOB_UUID, TASK_UUID_1, TASK_UUID_3);  // A->C
+    InsertEdge(tx, JOB_UUID, TASK_UUID_2, TASK_UUID_4);  // B->D
+    InsertEdge(tx, JOB_UUID, TASK_UUID_3, TASK_UUID_4);  // C->D
+  });
+
+  // 2. A 完成 -> B, C 应该激活 (Pending=0)
+  dts::internal::UpdateTaskStatusRequest req;
+  req.set_task_id(TASK_UUID_1);
+  req.set_final_state(dts::task::SUCCESS);
+  req.set_result_json("{}");
+  repo->HandleTaskCompletion(&req);
+
+  // 验证 B, C 状态
+  db_pool->ExecuteTx([](pqxx::work& tx) {
+    auto r = tx.exec_params(
+        "SELECT state FROM task WHERE task_id IN ($1::uuid, $2::uuid)",
+        TASK_UUID_2, TASK_UUID_3);
+    EXPECT_EQ(r[0][0].as<int>(), 0);  // PENDING
+    EXPECT_EQ(r[1][0].as<int>(), 0);  // PENDING
+  });
+
+  // 3. 模拟 B 完成 -> D 的 pending 应该从 2 变 1 (依然 WAITING)
+  req.set_task_id(TASK_UUID_2);
+  repo->HandleTaskCompletion(&req);
+
+  db_pool->ExecuteTx([](pqxx::work& tx) {
+    auto r = tx.exec_params(
+        "SELECT state, pending_dependencies FROM task WHERE task_id=$1::uuid",
+        TASK_UUID_4);
+    EXPECT_EQ(r[0]["state"].as<int>(), 6);                 // 依然 WAITING
+    EXPECT_EQ(r[0]["pending_dependencies"].as<int>(), 1);  // 剩 1 个依赖
+  });
+
+  // 4. 模拟 C 完成 -> D 应该激活
+  req.set_task_id(TASK_UUID_3);
+  repo->HandleTaskCompletion(&req);
+
+  db_pool->ExecuteTx([](pqxx::work& tx) {
+    auto r = tx.exec_params(
+        "SELECT state, pending_dependencies FROM task WHERE task_id=$1::uuid",
+        TASK_UUID_4);
+    EXPECT_EQ(r[0]["state"].as<int>(), 0);  // 终于 PENDING 了！
+    EXPECT_EQ(r[0]["pending_dependencies"].as<int>(), 0);
+  });
+}
+
+// ----------------------------------------------------------------
+// [新增] 测试 8: 状态机安全 (State Safety)
+// 防止已完成的任务被重复修改
+// ----------------------------------------------------------------
+TEST_F(TaskRepositoryTest, StateSafety_PreventIllegalTransition) {
+  db_pool->ExecuteTx([this](pqxx::work& tx) {
+    InsertJob(tx, JOB_UUID);
+    // 任务已经是 SUCCESS (2)
+    InsertTask(tx, TASK_UUID_1, JOB_UUID, 2);
+  });
+
+  // 尝试将其抢占为 RUNNING
+  // 你的 UpdateTaskToRunning SQL 应该有 WHERE state = 0 的判断
+  bool success = repo->UpdateTaskToRunning(TASK_UUID_1, "worker-new");
+
+  EXPECT_FALSE(success) << "Should not be able to run a finished task";
+}

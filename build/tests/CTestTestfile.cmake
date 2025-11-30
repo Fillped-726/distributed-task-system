@@ -6,3 +6,6 @@
 # testing this directory and lists subdirectories to be tested as well.
 subdirs("common")
 subdirs("scheduler")
+subdirs("worker")
+subdirs("client")
+subdirs("benchmark")

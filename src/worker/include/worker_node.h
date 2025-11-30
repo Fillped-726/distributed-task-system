@@ -17,10 +17,11 @@ namespace worker {
 class WorkerNode {
  public:
   // 构造函数
-  // server_address: 本地监听地址 (e.g., "0.0.0.0:50051")
+  // bind_addr: 本地监听地址 (e.g., "0.0.0.0:50051")
   // scheduler_address: 调度器地址 (e.g., "localhost:8080")
-  WorkerNode(const std::string& worker_id, const std::string& server_address,
-             const std::string& scheduler_address);
+  WorkerNode(const std::string& worker_id, const std::string& bind_addr,
+             const std::string& scheduler_address,
+             const std::string& advertise_addr);
 
   ~WorkerNode();
 
@@ -42,7 +43,8 @@ class WorkerNode {
 
  private:
   std::string worker_id_;
-  std::string server_address_;
+  std::string bind_addr_;
+  std::string advertise_addr_;
 
   // 组件
   std::unique_ptr<dts::common::ThreadPool> thread_pool_;

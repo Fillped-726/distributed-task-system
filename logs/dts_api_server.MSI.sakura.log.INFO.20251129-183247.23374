@@ -1,0 +1,12 @@
+Log file created at: 2025/11/29 18:32:47
+Running on machine: MSI
+Running duration (h:mm:ss): 0:00:00
+Log line format: [IWEF]yyyymmdd hh:mm:ss.uuuuuu threadid file:line] msg
+I20251129 18:32:47.872347 23374 logger.hpp:55] Glog initialized. Log dir: ./logs
+I20251129 18:32:47.872570 23374 database_pool.h:28] Initializing DatabasePool with size: 50
+I20251129 18:32:48.279064 23374 main.cpp:55] 数据库连接池初始化成功。
+I20251129 18:32:48.292482 23374 api_server.cpp:40] AsyncServer listening on 45403
+I20251129 18:32:48.292775 23374 main.cpp:116] AsyncServer running on port 45403
+W20251129 18:33:32.889662 23374 main.cpp:21] Caught signal 2, shutting down...
+I20251129 18:33:33.301654 23374 main.cpp:125] AsyncServer exited cleanly
+I20251129 18:33:33.302064 23374 database_pool.h:46] Destroying DatabasePool...

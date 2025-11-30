@@ -574,6 +574,10 @@ FETCHCONTENT_SOURCE_DIR_HTTPLIB:PATH=
 // for libpqxx
 FETCHCONTENT_SOURCE_DIR_LIBPQXX:PATH=
 
+//When not empty, overrides where to find pre-populated content
+// for nlohmann_json
+FETCHCONTENT_SOURCE_DIR_NLOHMANN_JSON:PATH=
+
 //Enables UPDATE_DISCONNECTED behavior for all content population
 FETCHCONTENT_UPDATES_DISCONNECTED:BOOL=OFF
 
@@ -597,6 +601,9 @@ FETCHCONTENT_UPDATES_DISCONNECTED_HTTPLIB:BOOL=OFF
 
 //Enables UPDATE_DISCONNECTED behavior just for population of libpqxx
 FETCHCONTENT_UPDATES_DISCONNECTED_LIBPQXX:BOOL=OFF
+
+//Enables UPDATE_DISCONNECTED behavior just for population of nlohmann_json
+FETCHCONTENT_UPDATES_DISCONNECTED_NLOHMANN_JSON:BOOL=OFF
 
 //Path to a program.
 GITCOMMAND:FILEPATH=/usr/bin/git
@@ -680,7 +687,7 @@ INSTALL_BIN_DIR:PATH=/usr/local/bin
 
 //Enable installation of googletest. (Projects embedding googletest
 // may want to turn this OFF.)
-INSTALL_GTEST:BOOL=ON
+INSTALL_GTEST:BOOL=OFF
 
 //Installation directory for headers
 INSTALL_INC_DIR:PATH=/usr/local/include
@@ -693,6 +700,36 @@ INSTALL_MAN_DIR:PATH=/usr/local/share/man
 
 //Installation directory for pkgconfig (.pc) files
 INSTALL_PKGCONFIG_DIR:PATH=/usr/local/share/pkgconfig
+
+//Build the unit tests when BUILD_TESTING is enabled.
+JSON_BuildTests:BOOL=OFF
+
+//Enable CI build targets.
+JSON_CI:BOOL=OFF
+
+//Use extended diagnostic messages.
+JSON_Diagnostics:BOOL=OFF
+
+//Disable default integer enum serialization.
+JSON_DisableEnumSerialization:BOOL=OFF
+
+//Place use-defined string literals in the global namespace.
+JSON_GlobalUDLs:BOOL=ON
+
+//Enable implicit conversions.
+JSON_ImplicitConversions:BOOL=ON
+
+//Install CMake targets during install step.
+JSON_Install:BOOL=OFF
+
+//Enable legacy discarded value comparison.
+JSON_LegacyDiscardedValueComparison:BOOL=OFF
+
+//Use non-amalgamated version of the library.
+JSON_MultipleHeaders:BOOL=ON
+
+//Include as system headers (skip for clang-tidy).
+JSON_SystemInclude:BOOL=OFF
 
 //Single output directory for building all libraries.
 LIBRARY_OUTPUT_PATH:PATH=
@@ -1044,6 +1081,8 @@ api-server_IS_TOP_LEVEL:STATIC=OFF
 //Value Computed by CMake
 api-server_SOURCE_DIR:STATIC=/home/sakura/text/distributed-task-system/src/api-server
 
+benchmark_INSTALL_DOCS:BOOL=OFF
+
 //The directory containing a CMake configuration file for boost_atomic.
 boost_atomic_DIR:PATH=/usr/lib/x86_64-linux-gnu/cmake/boost_atomic-1.83.0
 
@@ -1061,6 +1100,8 @@ boost_uuid_DIR:PATH=boost_uuid_DIR-NOTFOUND
 
 //Value Computed by CMake
 c-ares_BINARY_DIR:STATIC=/home/sakura/text/distributed-task-system/build/_deps/grpc-build/third_party/cares/cares
+
+c-ares_INSTALL:BOOL=OFF
 
 //Value Computed by CMake
 c-ares_IS_TOP_LEVEL:STATIC=OFF
@@ -1087,6 +1128,15 @@ dts_api_web_IS_TOP_LEVEL:STATIC=OFF
 
 //Value Computed by CMake
 dts_api_web_SOURCE_DIR:STATIC=/home/sakura/text/distributed-task-system/src/api-web
+
+//Value Computed by CMake
+dts_benchmark_BINARY_DIR:STATIC=/home/sakura/text/distributed-task-system/build/tests/benchmark
+
+//Value Computed by CMake
+dts_benchmark_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+dts_benchmark_SOURCE_DIR:STATIC=/home/sakura/text/distributed-task-system/tests/benchmark
 
 //Value Computed by CMake
 dts_client_BINARY_DIR:STATIC=/home/sakura/text/distributed-task-system/build/src/client
@@ -1196,6 +1246,8 @@ gRPC_ZLIB_PROVIDER:STRING=module
 
 //Value Computed by CMake
 glog_BINARY_DIR:STATIC=/home/sakura/text/distributed-task-system/build/_deps/glog-build
+
+glog_INSTALL:BOOL=OFF
 
 //Value Computed by CMake
 glog_IS_TOP_LEVEL:STATIC=OFF
@@ -1312,6 +1364,8 @@ httplib_IS_TOP_LEVEL:STATIC=OFF
 //Value Computed by CMake
 httplib_SOURCE_DIR:STATIC=/home/sakura/text/distributed-task-system/build/_deps/httplib-src
 
+json_INSTALL:BOOL=OFF
+
 //Value Computed by CMake
 libpqxx_BINARY_DIR:STATIC=/home/sakura/text/distributed-task-system/build/_deps/libpqxx-build
 
@@ -1321,8 +1375,17 @@ libpqxx_IS_TOP_LEVEL:STATIC=OFF
 //Value Computed by CMake
 libpqxx_SOURCE_DIR:STATIC=/home/sakura/text/distributed-task-system/build/_deps/libpqxx-src
 
+//Value Computed by CMake
+nlohmann_json_BINARY_DIR:STATIC=/home/sakura/text/distributed-task-system/build/_deps/nlohmann_json-build
+
 //The directory containing a CMake configuration file for nlohmann_json.
 nlohmann_json_DIR:PATH=/usr/share/cmake/nlohmann_json
+
+//Value Computed by CMake
+nlohmann_json_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+nlohmann_json_SOURCE_DIR:STATIC=/home/sakura/text/distributed-task-system/build/_deps/nlohmann_json-src
 
 //Path to a library.
 pkgcfg_lib__OPENSSL_crypto:FILEPATH=/usr/lib/x86_64-linux-gnu/libcrypto.so
@@ -1347,6 +1410,8 @@ protobuf_BUILD_CONFORMANCE:BOOL=OFF
 
 //Build examples
 protobuf_BUILD_EXAMPLES:BOOL=OFF
+
+protobuf_BUILD_EXPORT:BOOL=OFF
 
 //Build libprotoc
 protobuf_BUILD_LIBPROTOC:BOOL=OFF
@@ -1700,7 +1765,7 @@ CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_NM
 CMAKE_NM-ADVANCED:INTERNAL=1
 //number of local generators
-CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=56
+CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=60
 //ADVANCED property for variable: CMAKE_OBJCOPY
 CMAKE_OBJCOPY-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_OBJDUMP
@@ -2133,6 +2198,7 @@ MAKECOMMAND-ADVANCED:INTERNAL=1
 MEMORYCHECK_COMMAND-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: MEMORYCHECK_SUPPRESSIONS_FILE
 MEMORYCHECK_SUPPRESSIONS_FILE-ADVANCED:INTERNAL=1
+NLOHMANN_JSON_CONFIG_INSTALL_DIR:INTERNAL=share/cmake/nlohmann_json
 //CHECK_TYPE_SIZE: sizeof(off64_t)
 OFF64_T:INTERNAL=8
 //ADVANCED property for variable: OPENSSL_CRYPTO_LIBRARY

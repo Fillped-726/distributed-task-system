@@ -1,0 +1,66 @@
+Log file created at: 2025/11/29 18:20:51
+Running on machine: MSI
+Running duration (h:mm:ss): 0:00:00
+Log line format: [IWEF]yyyymmdd hh:mm:ss.uuuuuu threadid file:line] msg
+I20251129 18:20:51.410285 14382 logger.hpp:55] Glog initialized. Log dir: ./logs
+I20251129 18:20:51.410517 14382 task_registry.cpp:21] [ReqID:-] Task registered successfully: fail_test
+I20251129 18:20:51.410534 14382 main.cpp:43] [ReqID:-] Starting DTS Worker Node...
+I20251129 18:20:51.410537 14382 main.cpp:44] [ReqID:-] ID: worker-01
+I20251129 18:20:51.410542 14382 main.cpp:45] [ReqID:-] Listen: 0.0.0.0:50051
+I20251129 18:20:51.410544 14382 main.cpp:46] [ReqID:-] Scheduler: localhost:9090
+I20251129 18:20:51.425966 14382 worker_node.cpp:38] [ReqID:-] Worker gRPC Server listening on 0.0.0.0:50051
+I20251129 18:20:51.426038 14382 scheduler_client.cpp:23] [ReqID:-] Registering worker: worker-01 at 0.0.0.0:50051
+I20251129 18:20:51.441433 14382 scheduler_client.cpp:32] [ReqID:-] Worker registered successfully.
+I20251129 18:20:51.441581 14382 main.cpp:65] [ReqID:-] Worker is running. Press Ctrl+C to stop.
+I20251129 18:25:20.782173 16806 worker_service.cpp:39] [ReqID:Worker-Gen-468703135] Received RunTask Request: task_id=0b5a8198-a88b-4704-87bd-473669bacae8 name=
+I20251129 18:25:20.782176 16808 worker_service.cpp:39] [ReqID:Worker-Gen-1101513929] Received RunTask Request: task_id=315c0346-5ca2-435f-8a48-4b786a87656e name=
+I20251129 18:25:20.782192 14396 worker_service.cpp:39] [ReqID:Worker-Gen-1801979802] Received RunTask Request: task_id=2a5e9a20-4ad8-4b38-b39e-c485a06f5189 name=
+I20251129 18:25:20.782276 16809 worker_service.cpp:39] [ReqID:Worker-Gen-1315634022] Received RunTask Request: task_id=07f853a3-84fc-4ed6-82a2-210cb4059d41 name=
+I20251129 18:25:20.782876 14392 worker_node.cpp:98] [ReqID:2a5e9a20-4ad8-4b38-b39e-c485a06f5189] Start executing task: echo
+I20251129 18:25:20.782985 14392 tasks.cpp:74] [ReqID:2a5e9a20-4ad8-4b38-b39e-c485a06f5189] [Task] Echo: {"":"{}"}
+I20251129 18:25:20.783164 14392 worker_node.cpp:112] [ReqID:2a5e9a20-4ad8-4b38-b39e-c485a06f5189] Task execution finished successfully.
+I20251129 18:25:20.783077 14393 worker_node.cpp:98] [ReqID:0b5a8198-a88b-4704-87bd-473669bacae8] Start executing task: echo
+I20251129 18:25:20.783435 14395 worker_node.cpp:98] [ReqID:315c0346-5ca2-435f-8a48-4b786a87656e] Start executing task: echo
+I20251129 18:25:20.783447 14393 tasks.cpp:74] [ReqID:0b5a8198-a88b-4704-87bd-473669bacae8] [Task] Echo: {"":"{}"}
+I20251129 18:25:20.783454 14395 tasks.cpp:74] [ReqID:315c0346-5ca2-435f-8a48-4b786a87656e] [Task] Echo: {"":"{}"}
+I20251129 18:25:20.783463 14393 worker_node.cpp:112] [ReqID:0b5a8198-a88b-4704-87bd-473669bacae8] Task execution finished successfully.
+I20251129 18:25:20.783125 14394 worker_node.cpp:98] [ReqID:07f853a3-84fc-4ed6-82a2-210cb4059d41] Start executing task: echo
+I20251129 18:25:20.783675 14394 tasks.cpp:74] [ReqID:07f853a3-84fc-4ed6-82a2-210cb4059d41] [Task] Echo: {"":"{}"}
+I20251129 18:25:20.783686 14394 worker_node.cpp:112] [ReqID:07f853a3-84fc-4ed6-82a2-210cb4059d41] Task execution finished successfully.
+I20251129 18:25:20.782173 16807 worker_service.cpp:39] [ReqID:Worker-Gen-2145174067] Received RunTask Request: task_id=002b04e1-de5e-4bcd-a854-905798813046 name=
+I20251129 18:25:20.783464 14395 worker_node.cpp:112] [ReqID:315c0346-5ca2-435f-8a48-4b786a87656e] Task execution finished successfully.
+I20251129 18:25:20.783046 16810 worker_service.cpp:39] [ReqID:Worker-Gen-635723058] Received RunTask Request: task_id=6957832b-aea7-4553-abb6-053bc345e145 name=
+I20251129 18:25:20.783227 16812 worker_service.cpp:39] [ReqID:Worker-Gen-1125898167] Received RunTask Request: task_id=2371c3d7-1aaf-4f57-b849-25d31bff635f name=
+I20251129 18:25:20.783108 16811 worker_service.cpp:39] [ReqID:Worker-Gen-1369133069] Received RunTask Request: task_id=1e9f1341-a044-4c85-a6a4-7c0abf863892 name=
+I20251129 18:25:20.791417 16813 worker_service.cpp:39] [ReqID:Worker-Gen-1059961393] Received RunTask Request: task_id=1c2a0737-a0dc-41b0-b0d0-645ce868c941 name=
+I20251129 18:25:20.783478 14393 scheduler_client.cpp:74] [ReqID:0b5a8198-a88b-4704-87bd-473669bacae8] Updating task 0b5a8198-a88b-4704-87bd-473669bacae8 status to SUCCESS
+I20251129 18:25:20.783694 14394 scheduler_client.cpp:74] [ReqID:07f853a3-84fc-4ed6-82a2-210cb4059d41] Updating task 07f853a3-84fc-4ed6-82a2-210cb4059d41 status to SUCCESS
+I20251129 18:25:20.783280 14392 scheduler_client.cpp:74] [ReqID:2a5e9a20-4ad8-4b38-b39e-c485a06f5189] Updating task 2a5e9a20-4ad8-4b38-b39e-c485a06f5189 status to SUCCESS
+I20251129 18:25:20.792719 16813 worker_service.cpp:39] [ReqID:Worker-Gen-2089018456] Received RunTask Request: task_id=079c200e-95a8-45bc-b9e1-f02ffa4d043f name=
+I20251129 18:25:20.783856 14395 scheduler_client.cpp:74] [ReqID:315c0346-5ca2-435f-8a48-4b786a87656e] Updating task 315c0346-5ca2-435f-8a48-4b786a87656e status to SUCCESS
+I20251129 18:25:20.805936 14395 worker_node.cpp:98] [ReqID:002b04e1-de5e-4bcd-a854-905798813046] Start executing task: echo
+I20251129 18:25:20.805972 14395 tasks.cpp:74] [ReqID:002b04e1-de5e-4bcd-a854-905798813046] [Task] Echo: {"":"{}"}
+I20251129 18:25:20.805979 14395 worker_node.cpp:112] [ReqID:002b04e1-de5e-4bcd-a854-905798813046] Task execution finished successfully.
+I20251129 18:25:20.805989 14395 scheduler_client.cpp:74] [ReqID:002b04e1-de5e-4bcd-a854-905798813046] Updating task 002b04e1-de5e-4bcd-a854-905798813046 status to SUCCESS
+I20251129 18:25:20.807281 14394 worker_node.cpp:98] [ReqID:6957832b-aea7-4553-abb6-053bc345e145] Start executing task: echo
+I20251129 18:25:20.807754 14394 tasks.cpp:74] [ReqID:6957832b-aea7-4553-abb6-053bc345e145] [Task] Echo: {"":"{}"}
+I20251129 18:25:20.807770 14394 worker_node.cpp:112] [ReqID:6957832b-aea7-4553-abb6-053bc345e145] Task execution finished successfully.
+I20251129 18:25:20.807781 14394 scheduler_client.cpp:74] [ReqID:6957832b-aea7-4553-abb6-053bc345e145] Updating task 6957832b-aea7-4553-abb6-053bc345e145 status to SUCCESS
+I20251129 18:25:20.807494 14392 worker_node.cpp:98] [ReqID:2371c3d7-1aaf-4f57-b849-25d31bff635f] Start executing task: echo
+I20251129 18:25:20.808542 14392 tasks.cpp:74] [ReqID:2371c3d7-1aaf-4f57-b849-25d31bff635f] [Task] Echo: {"":"{}"}
+I20251129 18:25:20.808706 14392 worker_node.cpp:112] [ReqID:2371c3d7-1aaf-4f57-b849-25d31bff635f] Task execution finished successfully.
+I20251129 18:25:20.808723 14392 scheduler_client.cpp:74] [ReqID:2371c3d7-1aaf-4f57-b849-25d31bff635f] Updating task 2371c3d7-1aaf-4f57-b849-25d31bff635f status to SUCCESS
+I20251129 18:25:20.807538 14393 worker_node.cpp:98] [ReqID:1e9f1341-a044-4c85-a6a4-7c0abf863892] Start executing task: echo
+I20251129 18:25:20.809465 14393 tasks.cpp:74] [ReqID:1e9f1341-a044-4c85-a6a4-7c0abf863892] [Task] Echo: {"":"{}"}
+I20251129 18:25:20.809479 14393 worker_node.cpp:112] [ReqID:1e9f1341-a044-4c85-a6a4-7c0abf863892] Task execution finished successfully.
+I20251129 18:25:20.809490 14393 scheduler_client.cpp:74] [ReqID:1e9f1341-a044-4c85-a6a4-7c0abf863892] Updating task 1e9f1341-a044-4c85-a6a4-7c0abf863892 status to SUCCESS
+I20251129 18:25:20.810753 14395 worker_node.cpp:98] [ReqID:1c2a0737-a0dc-41b0-b0d0-645ce868c941] Start executing task: echo
+I20251129 18:25:20.810777 14395 tasks.cpp:74] [ReqID:1c2a0737-a0dc-41b0-b0d0-645ce868c941] [Task] Echo: {"":"{}"}
+I20251129 18:25:20.810783 14395 worker_node.cpp:112] [ReqID:1c2a0737-a0dc-41b0-b0d0-645ce868c941] Task execution finished successfully.
+I20251129 18:25:20.810792 14395 scheduler_client.cpp:74] [ReqID:1c2a0737-a0dc-41b0-b0d0-645ce868c941] Updating task 1c2a0737-a0dc-41b0-b0d0-645ce868c941 status to SUCCESS
+I20251129 18:25:20.814623 14393 worker_node.cpp:98] [ReqID:079c200e-95a8-45bc-b9e1-f02ffa4d043f] Start executing task: echo
+I20251129 18:25:20.814659 14393 tasks.cpp:74] [ReqID:079c200e-95a8-45bc-b9e1-f02ffa4d043f] [Task] Echo: {"":"{}"}
+I20251129 18:25:20.814666 14393 worker_node.cpp:112] [ReqID:079c200e-95a8-45bc-b9e1-f02ffa4d043f] Task execution finished successfully.
+I20251129 18:25:20.814675 14393 scheduler_client.cpp:74] [ReqID:079c200e-95a8-45bc-b9e1-f02ffa4d043f] Updating task 079c200e-95a8-45bc-b9e1-f02ffa4d043f status to SUCCESS
+I20251129 18:32:12.988464 14382 main.cpp:14] [ReqID:-] Interrupt signal (2) received. Stopping worker...
+I20251129 18:32:12.988699 14382 worker_node.cpp:58] [ReqID:-] Worker stopping...

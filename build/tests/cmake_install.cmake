@@ -52,3 +52,18 @@ if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   include("/home/sakura/text/distributed-task-system/build/tests/scheduler/cmake_install.cmake")
 endif()
 
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("/home/sakura/text/distributed-task-system/build/tests/worker/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("/home/sakura/text/distributed-task-system/build/tests/client/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("/home/sakura/text/distributed-task-system/build/tests/benchmark/cmake_install.cmake")
+endif()
+

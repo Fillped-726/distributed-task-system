@@ -1,0 +1,5 @@
+Log file created at: 2025/11/29 18:33:07
+Running on machine: MSI
+Running duration (h:mm:ss): 0:00:00
+Log line format: [IWEF]yyyymmdd hh:mm:ss.uuuuuu threadid file:line] msg
+F20251129 18:33:07.487731 24623 database_pool.h:40] Failed to create DB connection: connection to server at "127.0.0.1", port 5432 failed: FATAL:  sorry, too many clients already

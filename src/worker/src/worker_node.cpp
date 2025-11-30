@@ -8,9 +8,13 @@ namespace dts {
 namespace worker {
 
 WorkerNode::WorkerNode(const std::string& worker_id,
-                       const std::string& server_address,
-                       const std::string& scheduler_address)
-    : worker_id_(worker_id), server_address_(server_address), running_(false) {
+                       const std::string& bind_addr,
+                       const std::string& scheduler_address,
+                       const std::string& advertise_addr)
+    : worker_id_(worker_id),
+      bind_addr_(bind_addr),
+      running_(false),
+      advertise_addr_(advertise_addr) {
   auto channel = grpc::CreateChannel(scheduler_address,
                                      grpc::InsecureChannelCredentials());
   scheduler_client_ = std::make_unique<SchedulerClient>(channel);
@@ -32,12 +36,12 @@ void WorkerNode::Start() {
   running_ = true;
 
   grpc::ServerBuilder builder;
-  builder.AddListeningPort(server_address_, grpc::InsecureServerCredentials());
+  builder.AddListeningPort(bind_addr_, grpc::InsecureServerCredentials());
   builder.RegisterService(service_impl_.get());
   grpc_server_ = builder.BuildAndStart();
-  LOG_INFO << "Worker gRPC Server listening on " << server_address_;
+  LOG_INFO << "Worker gRPC Server listening on " << bind_addr_;
 
-  if (!scheduler_client_->RegisterWorker(worker_id_, server_address_)) {
+  if (!scheduler_client_->RegisterWorker(worker_id_, advertise_addr_)) {
     LOG_FATAL << "Failed to register worker to scheduler! Exiting...";
     exit(1);
   }

@@ -1,0 +1,141 @@
+version: '3.8'
+
+# 定义一个自定义网络，让所有服务都在同一个网段，可以通过服务名互通
+networks:
+  dts_net:
+    driver: bridge
+
+services:
+  # =========================================
+  # 1. 数据库 (PostgreSQL)
+  # =========================================
+  db:
+    image: postgres:15
+    command: postgres -c max_connections=200
+    container_name: dts_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: dts_db
+    ports:
+      - "5433:5432" # 暴露给宿主机，方便你用 Navicat/pgAdmin 查看数据
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - dts_net
+    # 健康检查：确保数据库完全启动后，C++ 服务再尝试连接（配合 C++ 中的重试逻辑更稳）
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # =========================================
+  # 2. Scheduler (调度中心)
+  # =========================================
+  scheduler:
+    build: .             # 使用当前目录的 Dockerfile 构建
+    image: dts-core:latest
+    container_name: dts_scheduler
+    command: ["./dts_scheduler"] # 指定运行 Scheduler
+    restart: always
+    environment:
+      - DTS_RUN_MODE=docker          # 开启纯控制台日志
+      - DATABASE_URL=postgresql://postgres:password@db:5432/dts_db
+      - SCHEDULER_PORT=9090
+      # log设置
+      - GLOG_logtostderr=1
+      - GLOG_v=0
+    ports:
+      - "9090:9090"      # 暴露 gRPC 端口，供外部调试或 API-Web 连接
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - dts_net
+
+  # =========================================
+  # 3. Worker 01 (节点 1)
+  # =========================================
+  worker-01:
+    image: dts-core:latest # 复用上面的镜像，不需要重复 build
+    container_name: dts_worker_01
+    hostname: worker-01    # [关键] 固定主机名，Scheduler 可以通过 "worker-01" 解析到 IP
+    command: ["./dts_worker", "worker-01"] # 参数1: 这里的名字用于生成 ID
+    restart: always
+    environment:
+      - DTS_RUN_MODE=docker
+      # 告诉 Worker Scheduler 在哪 (使用 Service Name)
+      - SCHEDULER_ADDR=scheduler:9090
+      # 绑定 0.0.0.0 保证容器外可访问
+      - WORKER_BIND_ADDR=0.0.0.0:50051
+      # [注意] 如果你的 Worker 代码会自动获取 hostname 发送给 Scheduler，
+      - WORKER_ADVERTISE_ADDR=worker-01:50051
+    depends_on:
+      - scheduler
+    networks:
+      - dts_net
+
+  # =========================================
+  # 4. Worker 02 (节点 2 - 模拟分布式)
+  # =========================================
+  worker-02:
+    image: dts-core:latest
+    container_name: dts_worker_02
+    hostname: worker-02    # [关键] 独立的主机名
+    command: ["./dts_worker", "worker-02"]
+    restart: always
+    environment:
+      - DTS_RUN_MODE=docker
+      - SCHEDULER_ADDR=scheduler:9090
+      - WORKER_BIND_ADDR=0.0.0.0:50051 
+      - WORKER_ADVERTISE_ADDR=worker-02:50051
+    depends_on:
+      - scheduler
+    networks:
+      - dts_net
+
+  # =========================================
+  # 5. API Server (任务提交入口)
+  # =========================================
+  api-server:
+    image: dts-core:latest
+    container_name: dts_api_server
+    command: ["./dts_api_server"]
+    restart: always
+    environment:
+      - DTS_RUN_MODE=docker
+      - DATABASE_URL=postgresql://postgres:password@db:5432/dts_db
+      - DTS_PORT=45403
+    ports:
+      - "45403:45403" # 暴露给宿主机，方便你用 Postman 测试提交任务
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - dts_net
+
+  # =========================================
+  # 6. API Web (前端 HTTP 接口)
+  # =========================================
+  api-web:
+    image: dts-core:latest
+    container_name: dts_api_web
+    command: ["./dts_api_web"]
+    restart: always
+    environment:
+      - DTS_RUN_MODE=docker
+      - SERVER_ADDR=scheduler:9090 # 连接到 Scheduler
+      - WEB_PORT=8080
+    ports:
+      - "8080:8080" 
+    depends_on:
+      - scheduler
+    networks:
+      - dts_net
+
+# 数据卷持久化
+volumes:
+  db_data:

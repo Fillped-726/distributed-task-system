@@ -71,9 +71,11 @@ class DatabasePool {
       tx.commit();
     } catch (const pqxx::broken_connection& e) {
       conn_broken = true;
+      ReleaseConnection(std::move(conn));
       LOG(ERROR) << "Database connection broken during Tx: " << e.what();
       throw;  // 抛出异常让上层处理重试
     } catch (const std::exception& e) {
+      ReleaseConnection(std::move(conn));
       LOG(WARNING) << "Transaction failed (rollback): " << e.what();
       throw;
     }
@@ -99,12 +101,12 @@ class DatabasePool {
 
     // 简单的性能监控：如果等待超过 1秒，打印日志
     auto duration = std::chrono::steady_clock::now() - start;
-    if (duration > std::chrono::seconds(1)) {
+    if (duration > std::chrono::milliseconds(10)) {
       LOG(WARNING) << "AcquireConnection blocked for "
                    << std::chrono::duration_cast<std::chrono::milliseconds>(
                           duration)
                           .count()
-                   << "ms";
+                   << "ms. Current pool size: " << m_pool.size();
     }
 
     auto conn = std::move(m_pool.front());
@@ -114,25 +116,37 @@ class DatabasePool {
 
   void ReleaseConnection(std::unique_ptr<pqxx::connection> conn,
                          bool force_reconnect = false) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-
-    if (!force_reconnect && conn && conn->is_open()) {
-      m_pool.push(std::move(conn));
-    } else {
-      // 连接已断开或被标记为损坏，尝试替换一个新的
-      LOG(WARNING) << "Discarding broken connection and creating a new one.";
+    // 1. 如果需要重连，先在锁外完成重连操作
+    if (force_reconnect || (conn && !conn->is_open())) {
+      LOG(WARNING) << "Connection broken, attempting to reconnect...";
       try {
+        // 在锁外进行耗时的网络操作
         auto new_conn = std::make_unique<pqxx::connection>(m_conn_string);
         if (new_conn->is_open()) {
-          m_pool.push(std::move(new_conn));
+          conn = std::move(new_conn);  // 替换旧连接
+        } else {
+          // 重连失败，此时 conn 为空或者坏连接，下面处理
+          conn.reset();
         }
       } catch (const std::exception& e) {
-        // 这是一个严重问题：连接池正在永久性缩小
-        LOG(ERROR) << "CRITICAL: Failed to replenish DB pool: " << e.what();
+        LOG(ERROR) << "Failed to replenish DB pool: " << e.what();
+        conn.reset();  // 确保坏连接被销毁
       }
     }
 
-    m_cond.notify_one();
+    // 2. 只有在此处才加锁，将连接放回队列
+    // 如果重连失败导致 conn
+    // 为空，就不放回了（池子暂时缩小，等待下次扩容或监控报警）
+    if (conn && conn->is_open()) {
+      std::lock_guard<std::mutex> lock(m_mutex);
+      m_pool.push(std::move(conn));
+      m_cond.notify_one();
+    } else {
+      // 如果连接彻底丢了，这里需要一种机制来通知系统池子变小了，
+      // 或者在这个分支里起一个异步线程去不断重试直到成功，
+      // 否则池子会越来越小直到枯竭。
+      LOG(ERROR) << "Connection pool size decreased!";
+    }
   }
 
   std::string m_conn_string;

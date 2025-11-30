@@ -10,6 +10,14 @@ GrpcClient::GrpcClient(const std::string& target)
   cq_thread_ = std::thread([this] { CompleteRpc(); });
 }
 
+GrpcClient::GrpcClient(std::shared_ptr<grpc::Channel> channel)
+    : channel_(channel),
+      stub_(TaskService::NewStub(channel)),
+      thread_pool_(std::make_shared<ThreadPool>(4)) {
+  // 启动轮询线程
+  cq_thread_ = std::thread([this] { CompleteRpc(); });
+}
+
 GrpcClient::~GrpcClient() {
   shutdown_ = true;
   cq_.Shutdown();

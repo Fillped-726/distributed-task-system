@@ -36,7 +36,7 @@ bool TaskSubmitter::handleSubmitDag(dts::SubmitDagRequest& request,
     // -----------------------------------------------------------------
     // 步骤 3: 插入 Job (处理幂等性)
     // -----------------------------------------------------------------
-    std::string new_job_uuid = dts::uuid::generate();
+    std::string new_job_uuid = dts::common::generate();
     request.job_id = new_job_uuid;
 
     std::string job_insert_sql =
@@ -86,7 +86,7 @@ bool TaskSubmitter::handleSubmitDag(dts::SubmitDagRequest& request,
       auto& task = request.tasks[i];
 
       // [修复 2] 必须在这里生成 UUID，否则 task_id 是空的
-      task.task_id = dts::uuid::generate();
+      task.task_id = dts::common::generate();
       // 记录映射关系，供后面处理 Edge 使用
       natural_to_uuid_map[task.natural_id] = task.task_id;
 

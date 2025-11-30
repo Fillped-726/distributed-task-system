@@ -1,5 +1,6 @@
 add_executable(common_test
     json_convert_test.cpp
+    database_pool_test.cpp
 )
 
 target_link_libraries(common_test PRIVATE
