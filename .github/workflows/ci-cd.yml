@@ -17,8 +17,8 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y cmake g++ libboost-all-dev redis-server libhiredis-dev  # 假设 Redis 用 hiredis；调整为你的依赖
-        sudo apt-get install -y nlohmann-json3-dev
+        sudo apt-get install -y cmake g++ libboost-all-dev redis-server libhiredis-dev  
+        sudo apt-get install -y libpqxx-dev postgresql-server-dev-all
     - name: Clean build directory
       run: rm -rf build
 
