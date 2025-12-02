@@ -11,6 +11,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # 安装依赖
 RUN apt-get update && apt-get install -y \
+    libhiredis-dev \
     build-essential \
     cmake \
     git \

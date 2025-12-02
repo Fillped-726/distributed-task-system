@@ -32,6 +32,17 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:alpine
+    container_name: dts_redis
+    ports:
+      - "6379:6379"
+    #以此配置开启 AOF 持久化，防止 Redis 意外挂掉时丢失太多数据
+    command: ["redis-server", "--appendonly", "yes"] 
+    restart: always
+    networks:
+      - dts_net
+
   # =========================================
   # 2. Scheduler (调度中心)
   # =========================================
@@ -45,14 +56,17 @@ services:
       - DTS_RUN_MODE=docker          # 开启纯控制台日志
       - DATABASE_URL=postgresql://postgres:password@db:5432/dts_db
       - SCHEDULER_PORT=9090
-      # log设置
       - GLOG_logtostderr=1
       - GLOG_v=0
+      - REDIS_HOST=redis  
+      - REDIS_PORT=6379
     ports:
       - "9090:9090"      # 暴露 gRPC 端口，供外部调试或 API-Web 连接
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_started
     networks:
       - dts_net
 
@@ -109,11 +123,15 @@ services:
       - DTS_RUN_MODE=docker
       - DATABASE_URL=postgresql://postgres:password@db:5432/dts_db
       - DTS_PORT=45403
+      - REDIS_HOST=redis   
+      - REDIS_PORT=6379
     ports:
       - "45403:45403" # 暴露给宿主机，方便你用 Postman 测试提交任务
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_started
     networks:
       - dts_net
 

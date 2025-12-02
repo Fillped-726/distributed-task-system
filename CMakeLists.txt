@@ -170,6 +170,18 @@ endif()
 # 线程支持
 find_package(Threads REQUIRED)
 
+#redis
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(HIREDIS REQUIRED hiredis)
+
+FetchContent_Declare(
+    redis-plus-plus
+    GIT_REPOSITORY https://github.com/sewenew/redis-plus-plus.git
+    GIT_TAG        master  # 或者指定具体 tag，如 "1.3.3"
+)
+
+FetchContent_MakeAvailable(redis-plus-plus)
+
 # ---------- 业务与测试 ----------
 add_subdirectory(src)
 

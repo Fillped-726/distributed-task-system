@@ -1,22 +1,29 @@
 # **Distributed Task Scheduling System (DTS)**
 
-一个基于 C++20 微服务架构的高可用分布式任务调度系统，支持 DAG 任务依赖编排与故障自愈。
+![Language](https://img.shields.io/badge/language-C%2B%2B20-blue.svg) ![Build](https://img.shields.io/badge/build-passing-brightgreen.svg) ![License](https://img.shields.io/badge/license-MIT-green.svg)
+
+一个基于 C++20 微服务架构的高可用分布式任务调度系统，支持 DAG 任务依赖编排、Fail-Fast 校验与故障自愈。
 
 ## **📖 项目简介 (Introduction)**
 
 **DTS (Distributed Task Scheduling System)** 是一个高性能的分布式调度平台原型，旨在解决大规模离线任务调度中的复杂依赖管理与高可用问题。
 
-系统基于 **Master-Worker** 架构设计，核心模块采用 **gRPC** 通信。支持 **DAG (有向无环图)** 拓扑排序与并发执行，利用 **PostgreSQL** 事务特性保证了任务状态流转的强一致性 (ACID)，并实现了 Worker 节点的故障自动检测与任务重试 (Failover)。
+系统采用分层架构设计，将**接入层 (API-Web)** 与 **逻辑持久层 (API-Server)** 分离。核心通信基于 **gRPC**，支持 **DAG (有向无环图)** 的实时构建与拓扑排序检查。系统利用 **PostgreSQL** 的 ACID 特性保证状态一致性，并通过 Master-Worker 模式实现了从任务提交到执行的全链路高吞吐处理。
 
 ## **✨ 核心特性 (Key Features)**
 
-* **DAG 依赖编排**: 支持复杂的任务依赖网络，基于 **入度表 (Indegree Table)** 算法实现高效的拓扑排序与并行分发。  
-* **高可用与故障恢复 (Fault Tolerance)**:  
-  * **心跳检测**: Scheduler 维护 Worker 存活状态，自动剔除僵死节点。  
-  * **自动重入队 (Requeue)**: 当 Worker 宕机时，其名下 RUNNING 任务会被自动回滚并重新调度，确保任务零丢失。  
-* **高性能通信**: 全链路采用 **gRPC (Protobuf)**，相比 RESTful 接口显著降低内部调用延迟。  
-* **自研数据库连接池**: 基于 libpqxx 实现线程安全的连接池，支持 **Execute-Around** 事务模板与断线自动重连 (Self-Healing)。  
-* **现代化工程**: 使用 Modern CMake 管理依赖 (FetchContent)，GoogleTest 单元测试覆盖率 \> 80%，支持 Docker 容器化部署。
+* **分层架构与职责分离**:
+    * **API-Web**: 负责请求接入与 **Fail-Fast 校验**。在内存中构建 DAG 并运行拓扑排序/DFS 算法，**直接拦截环路依赖**，防止非法数据污染核心存储。
+    * **API-Server**: 专注高吞吐写入与元数据管理，解耦了计算与存储。
+* **DAG 依赖编排**: 支持复杂的任务依赖网络，基于 **入度表 (Indegree Table)** 算法实现高效的并行调度。
+* **高可用与故障恢复 (Fault Tolerance)**:
+    * **心跳保活**: Scheduler 维护 Worker 存活状态，自动剔除僵死节点。
+    * **自动重入队 (Requeue)**: 当 Worker 宕机时，其名下 `RUNNING` 任务会被原子性回滚并重新调度，确保**任务零丢失**。
+* **高性能通信**: 
+    * 任务提交面 (Web -> Server) 和 控制面 (Scheduler <-> Worker) 全链路采用 **gRPC (Protobuf)**。
+* **工业级工程实践**: 
+    * 基于 `libpqxx` 封装**线程安全连接池**，支持自动断线重连 (Self-Healing)。
+    * 使用 Modern CMake (FetchContent) 管理依赖，支持 **Docker Compose** 一键部署。
 
 ## **🏗 系统架构 (Architecture)**
 
@@ -24,27 +31,24 @@
 
 ```mermaid
 graph TD
-    User[Client / Web UI] -->|HTTP JSON| Gateway[API Gateway]
+    User[Client / Frontend] -->|HTTP JSON| Web[API-Web Service]
     
-    %% 变更点：Gateway 指向 API Server，不再直接给 Scheduler
-    Gateway -->|RPC / HTTP| APIServer[API Server]
-    
-    %% 变更点：API Server 将任务存入 DB
-    APIServer -->|Insert Task| DB[(PostgreSQL)]
-    
-    %% 变更点：Scheduler 从 DB 获取数据
-    Scheduler[Scheduler Core] -->|Poll / Fetch| DB
-    
-    subgraph Service Mesh
-        Scheduler -->|gRPC / Assign| W1[Worker Node 1]
-        Scheduler -->|gRPC / Assign| W2[Worker Node 2]
+    subgraph "Submission Plane (提交面)"
+        Web -->|1. Build DAG & Cycle Check| Web
+        Web -- "2. Submit (gRPC)" --> Server[API-Server]
+        Server -- "3. Initial Indegree" --> DB[(PostgreSQL)]
     end
 
-    W1 -.->|Update Status| Scheduler
-    W2 -.->|Update Status| Scheduler
+    subgraph "Scheduling Plane (调度面)"
+        Scheduler[Scheduler Core] -- "4. Poll Ready Tasks" --> DB
+        Scheduler -- "5. Assign (gRPC)" --> W1[Worker Node 1]
+        Scheduler -- "5. Assign (gRPC)" --> W2[Worker Node 2]
+    end
+
+    W1 -.->|6. Status Callback| Scheduler
+    W2 -.->|6. Status Callback| Scheduler
     
-    %% Scheduler 更新 DB 状态
-    Scheduler -->|Update State| DB
+    Scheduler -- "7. Update State & Resolve Dependency" --> DB
 ```
 
 ### **2\. 任务状态流转机 (State Machine)**
@@ -66,9 +70,9 @@ stateDiagram-v2
 
 | 类别 (Category) | 技术 (Technology) |
 | :---- | :---- |
-| **Language** | C++20 (Concepts, Smart Pointers, Lambda) |
+| **Language** | C++17/20 (Concepts, Smart Pointers, Lambda) |
 | **Network** | gRPC, Protobuf, cpp-httplib |
-| **Database** | PostgreSQL (libpqxx driver) |
+| **Database** | PostgreSQL 12+ (libpqxx driver, Dynamic Partitioning) |
 | **Concurrency** | ThreadPool, std::mutex, std::condition\_variable |
 | **Build & Test** | CMake, GoogleTest (GTest), GLog |
 | **DevOps** | Docker, Docker Compose |
@@ -130,9 +134,15 @@ docker-compose up \-d \--build
 
 *测试环境：Ultra 7 255HX, 16GB RAM*
 
-* **并发调度**: 单 Scheduler 支持 500+ QPS 任务分发。  
-* **调度延迟**: 平均调度延迟 \< 10ms。
-* **API Submission**:QPS:682; avg : 11.65ms; P50 : 5.58ms; P99 : 67.62ms;
-* **scheduler**: QPS:1207; avg:1.64ms; P50:2.00ms; P95: 3.00ms P99 : 4.00ms;
+| 模块 (Module) | 指标 (Metric) | 数据 (Value) | 说明 |
+| :---- | :---- | :---- | :---- |
+| API Submission | QPS | 682 | 端到端 DAG 提交与落库 |
+| | Avg Latency | 11.65 ms |
+| | P99 Latency | 67.62 ms | 长尾延迟主要受 PG 写入影响 |
+| Scheduler,Dispatch | QPS | 1207 | 任务分发吞吐量 |
+| | Avg Latency | 1.64 ms | 极低的分发延迟 |
+| | P99 Latency | 4.00 ms |
+
+## **📅 未来规划 (Performance)**
 
 **Author:** \[郝光磊\]

@@ -7,6 +7,7 @@
 #include <sstream>
 #include <map>
 #include <chrono>
+#include <memory_resource>
 #include "uuid_generator.hpp"  // (假设你有一个这样的头文件)
 
 // *** 1. 关键修改：函数签名 ***
@@ -65,7 +66,11 @@ bool TaskSubmitter::handleSubmitDag(dts::SubmitDagRequest& request,
     // 步骤 4: "两遍循环 + Map 映射" (逻辑不变)
     // -----------------------------------------------------------------
 
-    std::map<std::string, std::string> natural_to_uuid_map;
+    std::array<std::byte, 32 * 1024> buffer;
+    std::pmr::monotonic_buffer_resource pool{buffer.data(), buffer.size()};
+
+    std::pmr::map<std::pmr::string, std::pmr::string, std::less<>>
+        natural_to_uuid_map{&pool};
 
     // -----------------------------------------------------------------
     // 步骤 4a: 第一次循环 (插入 Task)
@@ -85,10 +90,9 @@ bool TaskSubmitter::handleSubmitDag(dts::SubmitDagRequest& request,
     for (size_t i = 0; i < request.tasks.size(); ++i) {
       auto& task = request.tasks[i];
 
-      // [修复 2] 必须在这里生成 UUID，否则 task_id 是空的
       task.task_id = dts::common::generate();
       // 记录映射关系，供后面处理 Edge 使用
-      natural_to_uuid_map[task.natural_id] = task.task_id;
+      natural_to_uuid_map.emplace(task.natural_id, task.task_id);
 
       // 计算初始依赖数 (这部分逻辑你应该已经有了)
       int pending_count = dependency_count[task.natural_id];
@@ -131,14 +135,13 @@ bool TaskSubmitter::handleSubmitDag(dts::SubmitDagRequest& request,
       for (size_t i = 0; i < request.edges.size(); ++i) {
         const auto& edge = request.edges[i];
 
-        // ... (UUID 查找逻辑不变) ...
-        std::string parent_uuid =
-            natural_to_uuid_map.at(edge.parent_natural_id);
-        std::string child_uuid = natural_to_uuid_map.at(edge.child_natural_id);
+        const auto& parent_uuid =
+            natural_to_uuid_map.at(edge.parent_natural_id.c_str());
+        const auto& child_uuid =
+            natural_to_uuid_map.at(edge.child_natural_id.c_str());
 
-        edge_insert_sql << "(" << tx.quote(parent_uuid)
-                        << ", "                  // (*** 已修改：使用 tx ***)
-                        << tx.quote(child_uuid)  // (*** 已修改：使用 tx ***)
+        edge_insert_sql << "(" << tx.quote(std::string_view(parent_uuid))
+                        << ", " << tx.quote(std::string_view(child_uuid))
                         << ")";
         if (i < request.edges.size() - 1) edge_insert_sql << ", ";
       }
