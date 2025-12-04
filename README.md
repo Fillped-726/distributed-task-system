@@ -144,5 +144,12 @@ docker-compose up \-d \--build
 | | P99 Latency | 4.00 ms |
 
 ## **📅 未来规划 (Performance)**
+[ ] 引入 Redis 缓存:
+
+缓存 Worker 心跳数据，减少数据库高频写入压力。
+
+基于 Redis 实现分布式锁，支持 Scheduler 多节点高可用部署。
+
+[ ] 支持 Cron 表达式: 实现定时任务调度功能。
 
 **Author:** \[郝光磊\]

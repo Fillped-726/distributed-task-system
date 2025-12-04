@@ -71,10 +71,10 @@ endforeach()
 
 # ---- 4. 定义 dts_common 库 ----
 add_library(dts_common STATIC
-    src/logger.cpp
     src/config.cpp
     src/exceptions.cpp
     src/converters.cpp
+    src/redis/RedisManager.cpp
     ${PROTO_SRCS}
 )
 
@@ -98,6 +98,7 @@ target_link_libraries(dts_common
         Boost::system
         Boost::filesystem
         Boost::uuid
+        redis++::redis++ ${HIREDIS_LIBRARIES}
 )
 
 # ---- 7. 安装规则 ----
