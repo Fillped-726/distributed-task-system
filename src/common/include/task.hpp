@@ -10,7 +10,6 @@
 namespace dts {
 
 // 任务状态
-// 面试亮点：使用 enum class 强类型枚举，避免隐式转换带来的 Bug
 enum class TaskState : std::int8_t {
   PENDING = 0,       // 等待调度
   RUNNING = 1,       // 正在执行

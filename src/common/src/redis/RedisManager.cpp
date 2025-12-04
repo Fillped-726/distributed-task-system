@@ -1,4 +1,4 @@
-#include "RedisManager.hpp"
+#include "redis/RedisManager.hpp"
 #include "logger.hpp"
 
 #include <sw/redis++/redis++.h>
@@ -46,40 +46,103 @@ void RedisManager::Initialize(const RedisConfig& config) {
   });
 }
 
-std::optional<long long> RedisManager::LPush(std::string_view key,
-                                             std::string_view value) {
-  if (!_client) {
-    LOG_ERROR << "RedisManager not initialized. Cannot execute LPush.";
-    return std::nullopt;
-  }
-
+std::optional<std::string> RedisManager::XAdd(
+    std::string_view key,
+    const std::vector<std::pair<std::string, std::string>>& field_values,
+    std::string_view id) {
+  if (!_client) return std::nullopt;
   try {
-    // redis++ 的 lpush 支持 string_view
-    long long len = _client->lpush(key, value);
-    return len;
+    return _client->xadd(key, id, field_values.begin(), field_values.end());
   } catch (const std::exception& e) {
-    LOG_ERROR << "Redis LPush error. Key: " << key << ", Error: " << e.what();
+    LOG_ERROR << "Redis XADD error: " << e.what();
     return std::nullopt;
   }
 }
 
-std::optional<std::pair<std::string, std::string>> RedisManager::BRPop(
-    std::string_view key, int timeout_seconds) {
-  if (!_client) {
-    LOG_ERROR << "RedisManager not initialized. Cannot execute BRPop.";
+bool RedisManager::XGroupCreate(std::string_view key,
+                                std::string_view group_name,
+                                std::string_view id, bool mkstream) {
+  if (!_client) return false;
+  try {
+    if (mkstream) {
+      _client->xgroup_create(key, group_name, id, true);  // mkstream=true
+    } else {
+      _client->xgroup_create(key, group_name, id);
+    }
+    return true;
+  } catch (const sw::redis::Error& e) {
+    // 如果错误是 "BUSYGROUP Consumer Group name already exists"，则忽略
+    std::string msg = e.what();
+    if (msg.find("BUSYGROUP") != std::string::npos) {
+      return true;  // 已经存在算成功
+    }
+    LOG_ERROR << "Redis XGROUP CREATE error: " << e.what();
+    return false;
+  } catch (const std::exception& e) {
+    LOG_ERROR << "Redis XGROUP CREATE unexpected error: " << e.what();
+    return false;
+  }
+}
+
+std::optional<std::vector<RedisManager::StreamEntry>> RedisManager::XReadGroup(
+    std::string_view group, std::string_view consumer, std::string_view key,
+    int count, int block_ms) {
+  if (!_client) return std::nullopt;
+  try {
+    std::vector<StreamEntry> reply;
+
+    auto streams = {std::make_pair(std::string(key), std::string(">"))};
+
+    std::unordered_map<std::string, std::vector<StreamEntry>> result;
+
+    // redis++ 返回的是 std::unordered_map<std::string,
+    // std::vector<StreamEntry>> 因为 XREADGROUP 可以同时监听多个
+    // Stream，所以外层是 Map。 我们这里简化，只监听一个 key。
+    _client->xreadgroup(group, consumer, streams.begin(), streams.end(),
+                        std::chrono::milliseconds(block_ms), count,
+                        std::inserter(result, result.end()));
+
+    if (result.empty()) {
+      return std::vector<StreamEntry>{};  // 没有任何消息
+    }
+
+    return result.begin()->second;
+
+  } catch (const std::exception& e) {
+    // 超时在 redis++ 中可能会表现为 reply 为空，网络错误才抛异常
+    LOG_ERROR << "Redis XREADGROUP error: " << e.what();
     return std::nullopt;
   }
+}
+
+long long RedisManager::XAck(std::string_view key, std::string_view group,
+                             std::string_view id) {
+  if (!_client) return -1;
+  try {
+    return _client->xack(key, group, {std::string(id)});
+  } catch (const std::exception& e) {
+    LOG_ERROR << "Redis XACK error: " << e.what();
+    return -1;
+  }
+}
+
+std::optional<std::vector<RedisManager::StreamEntry>> RedisManager::XClaim(
+    std::string_view key, std::string_view group, std::string_view consumer,
+    long long min_idle_ms, const std::vector<std::string>& ids) {
+  if (!_client || ids.empty()) return std::nullopt;
 
   try {
-    // redis++ 的 brpop 返回 Optional<std::pair<string, string>>
-    auto result = _client->brpop(key, timeout_seconds);
-    if (result) {
-      return *result;  // 隐式转换为 std::pair
-    }
-    return std::nullopt;  // 超时
+    std::vector<StreamEntry> claimed_msgs;
+
+    // XCLAIM key group consumer min-idle-time id [id ...]
+    // redis-plus-plus 同样使用输出迭代器来接收结果
+    _client->xclaim(key, group, consumer,
+                    std::chrono::milliseconds(min_idle_ms), ids.begin(),
+                    ids.end(), std::back_inserter(claimed_msgs));
+
+    return claimed_msgs;
   } catch (const std::exception& e) {
-    // 注意：连接断开等网络错误会在这里捕获
-    LOG_ERROR << "Redis BRPop error. Key: " << key << ", Error: " << e.what();
+    LOG_ERROR << "Redis XCLAIM error. Key: " << key << ", Error: " << e.what();
     return std::nullopt;
   }
 }
