@@ -67,6 +67,7 @@ struct Task {
   std::string task_id;     // 全局唯一ID (UUID)
   std::string natural_id;  // 业务定义的ID (用于幂等性去重)
   std::string client_id;   // 提交者的ID
+  std::string stream_id;   // 任务组id
 
   // 2. 调度属性
   std::uint32_t priority = 0;            // 优先级

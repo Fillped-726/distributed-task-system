@@ -147,4 +147,41 @@ std::optional<std::vector<RedisManager::StreamEntry>> RedisManager::XClaim(
   }
 }
 
+std::optional<std::vector<PendingEntry>> RedisManager::XPending(
+    std::string_view key, std::string_view group, int count,
+    std::string_view start_id, std::string_view end_id,
+    std::string_view consumer) {
+  if (!_client) return std::nullopt;
+
+  try {
+    std::vector<PendingEntry> result;
+
+    // redis-plus-plus 的 output 类型是 sw::redis::XPendingDetail
+    std::vector<XPendingDetail> details;
+
+    // 根据是否指定 consumer 调用不同的重载
+    if (consumer.empty()) {
+      _client->xpending(key, group, start_id, end_id, count,
+                        std::back_inserter(details));
+    } else {
+      _client->xpending(key, group, start_id, end_id, count, consumer,
+                        std::back_inserter(details));
+    }
+
+    // 转换为我们的业务结构体 (解耦)
+    result.reserve(details.size());
+    for (const auto& d : details) {
+      result.push_back(PendingEntry{std::get<0>(d), std::get<1>(d),
+                                    std::get<2>(d), std::get<3>(d)});
+    }
+
+    return result;
+
+  } catch (const std::exception& e) {
+    LOG_ERROR << "Redis XPENDING error. Key: " << key
+              << ", Error: " << e.what();
+    return std::nullopt;
+  }
+}
+
 }  // namespace dts::common::redis

@@ -16,7 +16,17 @@ class Redis;
 using StreamEntry =
     std::pair<std::string, std::vector<std::pair<std::string, std::string>>>;
 
+using XPendingDetail =
+    std::tuple<std::string, std::string, long long, long long>;
+
 namespace dts::common::redis {
+
+struct PendingEntry {
+  std::string id;            // 消息 ID
+  std::string consumer;      // 当前持有者
+  long long idle_time_ms;    // 闲置毫秒数 (即上次被读取/ACK距今的时间)
+  long long delivery_count;  // 被投递次数
+};
 
 class RedisManager {
  public:
@@ -89,13 +99,20 @@ class RedisManager {
       long long min_idle_ms, const std::vector<std::string>& ids);
 
   /**
-   * @brief [查询滞留] XPENDING (Summary)
-   * 用于监控或者判断是否有积压/挂掉的任务
-   * @return {pending_count, min_id, max_id, consumer_count}
-   * 这里为了简单返回 total count，复杂结构可按需扩展
+   * @brief [查询滞留] XPENDING (Detailed Version)
+   * 查询消费者组中处于 Pending 状态的消息详情
+   * * @param key Stream 键名
+   * @param group 消费者组名
+   * @param count 最多查询多少条
+   * @param start_id 开始ID (通常传 "-" 表示从头查)
+   * @param end_id 结束ID (通常传 "+" 表示查到尾)
+   * @param consumer (可选) 仅查询特定消费者的 Pending 消息
+   * @return 详情列表
    */
-  // 暂时先不封装复杂的 Range 版本，先提供一个简单的检查接口
-  // std::optional<PendingInfo> XPending(...);
+  std::optional<std::vector<PendingEntry>> XPending(
+      std::string_view key, std::string_view group, int count = 10,
+      std::string_view start_id = "-", std::string_view end_id = "+",
+      std::string_view consumer = "");
 
  private:
   RedisManager() = default;

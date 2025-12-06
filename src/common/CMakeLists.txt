@@ -98,7 +98,8 @@ target_link_libraries(dts_common
         Boost::system
         Boost::filesystem
         Boost::uuid
-        redis++::redis++ ${HIREDIS_LIBRARIES}
+        redis++::redis++ 
+        fmt::fmt
 )
 
 # ---- 7. 安装规则 ----

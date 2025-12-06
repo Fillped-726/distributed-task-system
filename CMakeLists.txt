@@ -81,21 +81,47 @@ set(GRPC_PLUGIN "$<TARGET_FILE:grpc_cpp_plugin>")
 
 # ---------- 2. 工具库 (JSON, Redis, GTest) ----------
 
-# [优化] nlohmann_json 改为 FetchContent
+FetchContent_Declare(
+  fmt
+  GIT_REPOSITORY https://github.com/fmtlib/fmt.git
+  GIT_TAG        10.1.1
+)
+FetchContent_MakeAvailable(fmt)
+
 FetchContent_Declare(
     nlohmann_json
     GIT_REPOSITORY https://github.com/nlohmann/json.git
     GIT_TAG        v3.11.3
 )
-# nlohmann_json 提供了 nlohmann_json::nlohmann_json 目标
 FetchContent_MakeAvailable(nlohmann_json)
 
 FetchContent_Declare(
     hiredis
     GIT_REPOSITORY https://github.com/redis/hiredis.git
-    GIT_TAG        v1.2.0
+    GIT_TAG        v1.2.0 
     CMAKE_ARGS     -DBUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF
 )
+FetchContent_MakeAvailable(hiredis)
+
+FetchContent_Declare(
+    redis-plus-plus
+    GIT_REPOSITORY https://github.com/sewenew/redis-plus-plus.git
+    GIT_TAG        master
+    GIT_SHALLOW    TRUE
+)
+
+FetchContent_GetProperties(redis-plus-plus)
+if(NOT redis-plus-plus_POPULATED)
+    FetchContent_Populate(redis-plus-plus)
+    
+    # [关键] 强制指定 hiredis 的路径，防止它去系统里乱找
+    # 这里利用了上面 hiredis FetchContent 后生成的变量
+    set(HIREDIS_HEADER_DIR ${hiredis_SOURCE_DIR} CACHE PATH "" FORCE)
+    set(HIREDIS_LIB hiredis CACHE STRING "" FORCE) # 链接到上面的 hiredis target
+    set(CMAKE_CXX_STANDARD 20)
+    
+    add_subdirectory(${redis-plus-plus_SOURCE_DIR} ${redis-plus-plus_BINARY_DIR})
+endif()
 
 FetchContent_Declare(
     googletest
@@ -103,7 +129,7 @@ FetchContent_Declare(
     GIT_TAG        v1.17.0
     CMAKE_ARGS     -DBUILD_GMOCK=ON -DINSTALL_GTEST=OFF
 )
-FetchContent_MakeAvailable(hiredis googletest)
+FetchContent_MakeAvailable(googletest)
 
 # ---------- 3. glog ----------
 set(WITH_GFLAGS OFF CACHE BOOL "" FORCE)
@@ -118,6 +144,8 @@ FetchContent_Declare(
     GIT_SHALLOW    TRUE
 )
 FetchContent_MakeAvailable(glog)
+
+
 
 # ---------- 4. Web & DB ----------
 
@@ -140,13 +168,14 @@ FetchContent_Declare(
     GIT_TAG        7.9.0 
     CMAKE_ARGS     
         -DBUILD_TESTS=OFF 
-        -DCMAKE_CXX_STANDARD=17
+        -DCMAKE_CXX_STANDARD=20
         -DCMAKE_CXX_STANDARD_REQUIRED=ON
         -DSKIP_BUILD_TEST=ON
 )
 FetchContent_MakeAvailable(libpqxx)
 
 # ---------- 5. 系统级库 (保持 find_package) ----------
+
 
 # Boost (太大，不建议 Fetch)
 find_package(Boost 1.83 REQUIRED COMPONENTS system filesystem)
@@ -169,18 +198,6 @@ endif()
 
 # 线程支持
 find_package(Threads REQUIRED)
-
-#redis
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(HIREDIS REQUIRED hiredis)
-
-FetchContent_Declare(
-    redis-plus-plus
-    GIT_REPOSITORY https://github.com/sewenew/redis-plus-plus.git
-    GIT_TAG        master  # 或者指定具体 tag，如 "1.3.3"
-)
-
-FetchContent_MakeAvailable(redis-plus-plus)
 
 # ---------- 业务与测试 ----------
 add_subdirectory(src)
