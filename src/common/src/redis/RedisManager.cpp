@@ -184,4 +184,81 @@ std::optional<std::vector<PendingEntry>> RedisManager::XPending(
   }
 }
 
+std::string RedisManager::LoadScript(const std::string& script_content) {
+  if (!_is_initialized || !_client)
+    throw std::runtime_error("Redis not initialized");
+
+  // 1. 加载到 Redis
+  std::string sha = _client->script_load(script_content);
+
+  // 2. 本地缓存映射关系
+  {
+    std::unique_lock<std::shared_mutex> lock(_script_mutex);
+    _script_cache[sha] = script_content;
+  }
+
+  LOG_INFO << "Loaded Lua script. SHA: " << sha;
+  return sha;
+}
+
+std::optional<long long> RedisManager::EvalSha(
+    const std::string& sha, const std::vector<std::string>& keys,
+    const std::vector<std::string>& args) {
+  if (!_client) return std::nullopt;
+
+  try {
+    // 尝试直接使用 SHA1 执行
+    return _client->evalsha<long long>(sha, keys.begin(), keys.end(),
+                                       args.begin(), args.end());
+
+  } catch (const sw::redis::Error& e) {
+    std::string err_msg = e.what();
+
+    // --- 捕获 NOSCRIPT 错误 ---
+    if (err_msg.find("NOSCRIPT") != std::string::npos) {
+      LOG_WARN << "Redis script missing (NOSCRIPT). SHA: " << sha
+               << ". Attempting to reload and retry...";
+
+      // 1. 从本地缓存查找原始脚本
+      std::string script_content;
+      {
+        std::shared_lock<std::shared_mutex> lock(_script_mutex);
+        auto it = _script_cache.find(sha);
+        if (it != _script_cache.end()) {
+          script_content = it->second;
+        }
+      }
+
+      // 2. 如果找到了，使用 EVAL 直接执行
+      // EVAL 会自动重新缓存脚本，相当于修复了 NOSCRIPT 问题
+      if (!script_content.empty()) {
+        try {
+          auto result =
+              _client->eval<long long>(script_content, keys.begin(), keys.end(),
+                                       args.begin(), args.end());
+          LOG_INFO << "Script auto-reloaded and executed successfully.";
+          return result;
+
+        } catch (const std::exception& retry_ex) {
+          LOG_ERROR << "Retry failed after NOSCRIPT: " << retry_ex.what();
+          return std::nullopt;
+        }
+      } else {
+        LOG_ERROR << "Cannot recover NOSCRIPT: Script content not found in "
+                     "local cache for SHA: "
+                  << sha;
+        return std::nullopt;
+      }
+    }
+
+    // 其他 Redis 错误
+    LOG_ERROR << "Redis EvalSha failed: " << err_msg;
+    return std::nullopt;
+
+  } catch (const std::exception& e) {
+    LOG_ERROR << "System error in EvalSha: " << e.what();
+    return std::nullopt;
+  }
+}
+
 }  // namespace dts::common::redis

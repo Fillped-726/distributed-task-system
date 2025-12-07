@@ -16,14 +16,24 @@
 #include "task_repository.h"
 #include "scheduler_loop.h"
 #include "scheduler_service_impl.h"
+#include "utils/utils.hpp"
+
+#include "redis/RedisManager.hpp"
+#include "redis/RedisConfig.hpp"
 
 using dts::common::DatabasePool;
+using dts::common::redis::RedisConfig;
+using dts::common::redis::RedisManager;
 using dts::scheduler::SchedulerLoop;
 using dts::scheduler::SchedulerServiceImpl;
 using dts::scheduler::TaskRepository;
 using dts::scheduler::WorkerManager;
 
 std::unique_ptr<grpc::Server> g_grpc_server = nullptr;
+
+std::condition_variable g_cv;
+std::mutex g_cv_mutex;
+std::atomic<bool> g_stop_patrol{false};
 
 void HandleSignal(int signum) {
   // 信号处理中尽量只做简单操作
@@ -39,12 +49,12 @@ void RunPatrolLoop(std::shared_ptr<WorkerManager> worker_manager,
   dts::SetRequestId("PATROL");
   LOG_INFO << "PatrolLoop started.";
 
-  while (!(*stop_flag)) {
-    for (int i = 0; i < 100; ++i) {
-      if (*stop_flag) break;
-      std::this_thread::sleep_for(std::chrono::milliseconds(70));
-    }
-    if (*stop_flag) break;
+  while (!g_stop_patrol) {
+    std::unique_lock<std::mutex> lock(g_cv_mutex);
+    g_cv.wait_for(lock, std::chrono::seconds(30),
+                  [] { return g_stop_patrol.load(); });
+
+    if (g_stop_patrol) break;
 
     try {
       auto dead_workers = worker_manager->PruneDeadWorkers();
@@ -83,7 +93,6 @@ int main(int argc, char** argv) {
   std::atomic<bool> patrol_stop_flag{false};
 
   try {
-    // 2. 读取环境变量
     const char* env_conn_string = std::getenv("DATABASE_URL");
     std::string conn_string =
         (env_conn_string)
@@ -91,24 +100,16 @@ int main(int argc, char** argv) {
             : "postgresql://postgres:password@localhost:5432/dts_db";
 
     // 3. [关键优化] 数据库连接重试循环
-    // 在 Docker 中，DB 启动可能比 APP 慢，需要等待
-    int max_retries = 30;  // 尝试 30 次，每次 1 秒
-    for (int i = 0; i < max_retries; ++i) {
-      try {
-        db_pool = std::make_shared<DatabasePool>(conn_string, 120);
-        LOG_INFO << "Database connection established.";
-        break;
-      } catch (const std::exception& e) {
-        if (i == max_retries - 1) {
-          LOG_FATAL << "Failed to connect to DB after " << max_retries
-                    << " attempts. Exiting.";
-          return 1;
-        }
-        LOG_WARN << "Waiting for Database... (" << (i + 1) << "/" << max_retries
-                 << "): " << e.what();
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-      }
-    }
+    dts::common::utils::InitWithRetry("Database", [&]() {
+      db_pool = std::make_shared<DatabasePool>(conn_string, 30);
+    });
+
+    // 3.5 [新增] Redis 初始化 (带重试)
+    // -------------------------------------------------------------------------
+    dts::common::utils::InitWithRetry("Redis", [&]() {
+      auto conf = RedisConfig::LoadFromEnv();
+      RedisManager::GetInstance().Initialize(conf);
+    });
 
     // 4. 组件初始化
     LOG_INFO << "Initializing components...";
@@ -149,6 +150,13 @@ int main(int argc, char** argv) {
 
   // 优雅退出
   LOG_INFO << "Starting graceful shutdown...";
+
+  {
+    std::lock_guard<std::mutex> lock(g_cv_mutex);
+    g_stop_patrol = true;
+  }
+  g_cv.notify_all();
+
   if (scheduler_loop) scheduler_loop->Stop();
 
   patrol_stop_flag = true;

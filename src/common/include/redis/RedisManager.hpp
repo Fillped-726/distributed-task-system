@@ -7,6 +7,7 @@
 #include <string_view>
 #include <optional>
 #include <vector>
+#include <shared_mutex>
 
 // 前置声明，隐藏第三方库细节
 namespace sw::redis {
@@ -114,12 +115,28 @@ class RedisManager {
       std::string_view start_id = "-", std::string_view end_id = "+",
       std::string_view consumer = "");
 
+  // 加载脚本并返回 SHA1
+  std::string LoadScript(const std::string& script_content);
+
+  // 执行脚本 (EvalSha)
+  // keys: vector<string>
+  // args: vector<string>
+  // 返回值: 脚本返回的整数 (这里是触发的任务数量)
+  std::optional<long long> EvalSha(const std::string& sha,
+                                   const std::vector<std::string>& keys,
+                                   const std::vector<std::string>& args);
+
  private:
   RedisManager() = default;
   ~RedisManager();  // 析构函数不能默认，因为 unique_ptr 指向不完整类型
 
   std::unique_ptr<sw::redis::Redis> _client;  // 真正持有客户端
   std::once_flag _init_flag;
+
+  // 脚本缓存：SHA1 -> 原始内容
+  // 用于在 NOSCRIPT 错误发生时自动重新加载
+  std::unordered_map<std::string, std::string> _script_cache;
+  std::shared_mutex _script_mutex;  // 读多写少，用读写锁
 };
 
 }  // namespace dts::common::redis

@@ -4,10 +4,12 @@
 #include <vector>
 #include <memory>
 #include <pqxx/pqxx>
+#include <optional>
 
 #include "database_pool.h"
 #include "dts/internal/internal_service.pb.h"  // UpdateTaskStatusRequest
 #include "dts/task/task.pb.h"                  // Task, TaskState
+#include "task.hpp"
 
 namespace dts {
 namespace scheduler {

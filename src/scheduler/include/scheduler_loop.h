@@ -10,6 +10,11 @@
 #include "task_repository.h"
 #include "worker_manager.h"
 
+// Redis & Utils
+#include "redis/RedisManager.hpp"
+#include "utils/TaskSerializer.hpp"
+#include "task.hpp"
+
 // gRPC 依赖
 #include <grpcpp/grpcpp.h>
 #include "dts/internal/internal_service.grpc.pb.h"
@@ -18,6 +23,7 @@
 
 namespace dts {
 namespace scheduler {
+using RedisManager = dts::common::redis::RedisManager;
 
 class SchedulerLoop {
  public:
@@ -32,8 +38,14 @@ class SchedulerLoop {
  private:
   void RunLoop();
 
+  // 处理单条 Stream 消息的通用逻辑
+  void ProcessStreamEntry(const RedisManager::StreamEntry& entry);
+
+  // 救援逻辑：处理长时间未ACK的消息
+  void DoRescue();
+
   // 真正的派发逻辑
-  void DoDispatch(const dts::task::Task& task, const WorkerInfo& worker);
+  void DoDispatch(const dts::Task& task, const WorkerInfo& worker);
 
   std::shared_ptr<dts::internal::WorkerService::Stub> GetWorkerStub(
       const std::string& address);
@@ -51,6 +63,8 @@ class SchedulerLoop {
   std::atomic<bool> stop_flag_;
 
   std::unique_ptr<dts::common::ThreadPool> dispatch_pool_;
+
+  std::string consumer_name_;
 };
 
 }  // namespace scheduler

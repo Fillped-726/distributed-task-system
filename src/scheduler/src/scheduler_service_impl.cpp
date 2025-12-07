@@ -5,6 +5,7 @@
 #include "logger.hpp"
 #include "dts/error/error.pb.h"
 #include "dts/error/sys_error.pb.h"
+#include "dts/task/task_state.grpc.pb.h"
 
 namespace dts {
 namespace scheduler {
@@ -100,31 +101,88 @@ grpc::Status SchedulerServiceImpl::UpdateTaskStatus(
     grpc::ServerContext* context,
     const dts::internal::UpdateTaskStatusRequest* request,
     dts::internal::UpdateTaskStatusResponse* response) {
-  dts::SetRequestId("UPD-" + request->task_id());
+  std::string task_id = request->task_id();
+  dts::task::TaskState state = request->final_state();
 
-  // 这里非常关键：Worker 汇报任务结束，可能是 SUCCESS，也可能是 FAILED
-  LOG_INFO << "[UpdateTaskStatus] Task: " << request->task_id()
-           << ", State: " << dts::task::TaskState_Name(request->final_state());
+  dts::SetRequestId("UPD-" + task_id);
 
-  if (request->task_id().empty()) {
-    return grpc::Status::OK;
-  }
+  LOG_INFO << "[UpdateTaskStatus] Task: " << task_id
+           << ", State: " << dts::task::TaskState_Name(state);
 
-  // 防御性编程
+  if (task_id.empty()) return grpc::Status::OK;
   if (!task_repository_) {
-    LOG_ERROR << "TaskRepository is null, cannot process task completion";
+    LOG_ERROR << "TaskRepository is null";
     return grpc::Status(grpc::INTERNAL, "Internal Server Error");
   }
 
-  // 2. 委托给 TaskRepository 处理 DAG 状态流转
-  // 如果任务成功，Repository 需要找到后续任务，将 pending_deps - 1
-  // 如果减到 0，Repository 需要把任务状态改为 PENDING 并推入队列
-  bool success = task_repository_->HandleTaskCompletion(request);
+  // ---------------------------------------------------------
+  // 分支处理：成功 vs 失败
+  // ---------------------------------------------------------
+  if (state == dts::task::TaskState::SUCCESS) {
+    // [关键] 成功分支：可能会触发后续任务
+    // 我们假设 TaskRepository 有一个新方法: FinishTaskAndGetReadyChildren
+    // 它负责原子性地更新 DB，并返回那些 "刚刚变成 PENDING" 的子任务
+    std::vector<dts::Task> next_tasks =
+        task_repository_->FinishTaskAndGetReadyChildren(
+            task_id,
+            request->result()  // 结果 JSON
+        );
 
-  if (!success) {
-    LOG_ERROR << "[UpdateTaskStatus] Failed to update DAG state for task "
-              << request->task_id();
-    // 这里的失败通常意味着数据库挂了
+    // 如果有新任务就绪，推送到 Redis
+    if (!next_tasks.empty()) {
+      LOG_INFO << "Task " << task_id << " triggered " << next_tasks.size()
+               << " next tasks.";
+
+      auto& redis = RedisManager::GetInstance();
+      int pushed_count = 0;
+
+      for (const auto& task : next_tasks) {
+        // 1. 序列化
+        auto args_opt = TaskSerializer::ToXAddArgs(task);
+        if (!args_opt) {
+          LOG_ERROR << "Failed to serialize child task " << task.task_id;
+          continue;
+        }
+
+        // 2. 推送 Redis Stream
+        auto msg_id_opt = redis.XAdd(keys::stream::kTasks, *args_opt);
+        if (msg_id_opt) {
+          pushed_count++;
+        } else {
+          LOG_WARN << "Failed to push child task " << task.task_id
+                   << " to Redis!";
+        }
+      }
+      LOG_DEBUG << "Pushed " << pushed_count << " child tasks to Redis.";
+    } else {
+      LOG_DEBUG << "Task " << task_id
+                << " finished, but no new tasks triggered.";
+    }
+
+  } else {
+    // [关键] 失败分支：处理重试或标记失败
+    // 调用旧的 UpdateStatus 方法即可，不需要触发子任务
+    // 如果需要重试，TaskRepository 内部逻辑会将状态改回 PENDING 吗？
+    // 如果是重试，你也需要在这里重新推 Redis！
+    // 假设 Repository 的 HandleTaskFailure 返回 true 表示 "需要重试"
+
+    bool need_retry = task_repository_->HandleTaskFailure(
+        task_id, request->error_msg(),
+        request->retry_count()  // Worker 汇报时可能带上当前的重试次数
+    );
+
+    if (need_retry) {
+      // 如果决定重试，我们需要重新获取该任务的完整信息并推 Redis
+      auto retry_task_opt = task_repository_->GetTaskById(task_id);
+      if (retry_task_opt) {
+        LOG_WARN << "Task " << task_id
+                 << " failed but will retry. Pushing back to Redis.";
+        auto args_opt = TaskSerializer::ToXAddArgs(*retry_task_opt);
+        if (args_opt) {
+          RedisManager::GetInstance().XAdd(keys::stream::kTasks, *args_opt);
+        }
+      }
+    }
   }
 
   response->mutable_header();
