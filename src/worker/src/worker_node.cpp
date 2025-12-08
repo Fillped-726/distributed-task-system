@@ -87,7 +87,7 @@ void WorkerNode::OnTaskReceived(const dts::Task& task) {
     // Enum，我们需要强转，或者修改 Client 定义 暂时假设 UpdateTaskStatus
     // 接受的是你的 dts::TaskState
     scheduler_client_->UpdateTaskStatus(
-        task.task_id, dts::TaskState::FAILED,
+        task.task_id, dts::TaskState::FAILED, task.job_id,
         "Worker does not have this task function registered");
     return;
   }
@@ -126,13 +126,13 @@ void WorkerNode::OnTaskReceived(const dts::Task& task) {
       }
 
       // C. 向 Scheduler 汇报结果
-      scheduler_client_->UpdateTaskStatus(task.task_id, final_state, error_msg,
-                                          result_json_str);
+      scheduler_client_->UpdateTaskStatus(
+          task.task_id, final_state, task.job_id, error_msg, result_json_str);
     });
   } catch (const std::exception& e) {
     LOG_ERROR << "Failed to enqueue task: " << e.what();
     scheduler_client_->UpdateTaskStatus(
-        task.task_id, dts::TaskState::FAILED,
+        task.task_id, dts::TaskState::FAILED, task.job_id,
         std::string("Enqueue failed: ") + e.what());
   }
 }

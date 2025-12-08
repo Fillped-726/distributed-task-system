@@ -27,6 +27,7 @@ class SchedulerClient {
 
   // 3. 汇报任务状态
   bool UpdateTaskStatus(const std::string& task_id, dts::TaskState state,
+                        const std::string& job_id,
                         const std::string& error_msg = "",
                         const std::string& result_json = "");
 

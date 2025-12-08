@@ -1,5 +1,6 @@
 #include "redis/RedisManager.hpp"
 #include "logger.hpp"
+#include <stdexcept>
 
 #include <sw/redis++/redis++.h>
 
@@ -185,9 +186,11 @@ std::optional<std::vector<PendingEntry>> RedisManager::XPending(
 }
 
 std::string RedisManager::LoadScript(const std::string& script_content) {
-  if (!_is_initialized || !_client)
-    throw std::runtime_error("Redis not initialized");
-
+  if (!_client) throw std::runtime_error("Redis not initialized");
+  if (script_content.empty()) {
+    LOG_ERROR << "Redis script_content is NULL";
+    throw std::invalid_argument("script_content cannot be empty");
+  }
   // 1. 加载到 Redis
   std::string sha = _client->script_load(script_content);
 
@@ -216,8 +219,8 @@ std::optional<long long> RedisManager::EvalSha(
 
     // --- 捕获 NOSCRIPT 错误 ---
     if (err_msg.find("NOSCRIPT") != std::string::npos) {
-      LOG_WARN << "Redis script missing (NOSCRIPT). SHA: " << sha
-               << ". Attempting to reload and retry...";
+      LOG_ERROR << "Redis EvalSha failed: " << err_msg
+                << " | First Key: " << (keys.empty() ? "None" : keys[0]);
 
       // 1. 从本地缓存查找原始脚本
       std::string script_content;
@@ -259,6 +262,14 @@ std::optional<long long> RedisManager::EvalSha(
     LOG_ERROR << "System error in EvalSha: " << e.what();
     return std::nullopt;
   }
+}
+
+sw::redis::Redis& RedisManager::GetConnection() {
+  if (!_client) {
+    throw std::runtime_error(
+        "RedisManager is not initialized! Call Initialize() first.");
+  }
+  return *_client;
 }
 
 }  // namespace dts::common::redis

@@ -7,6 +7,7 @@
 #include <string_view>
 #include <optional>
 #include <vector>
+#include <unordered_map>
 #include <shared_mutex>
 
 // 前置声明，隐藏第三方库细节
@@ -125,6 +126,10 @@ class RedisManager {
   std::optional<long long> EvalSha(const std::string& sha,
                                    const std::vector<std::string>& keys,
                                    const std::vector<std::string>& args);
+
+  // 获取底层 Redis 客户端引用 (用于 Pipeline, Transaction 等高级操作)
+  // 注意：调用者需要自行处理 redis-plus-plus 的异常
+  [[nodiscard]] sw::redis::Redis& GetConnection();
 
  private:
   RedisManager() = default;

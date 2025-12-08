@@ -17,6 +17,7 @@
 #include "scheduler_loop.h"
 #include "scheduler_service_impl.h"
 #include "utils/utils.hpp"
+#include "db_batcher.hpp"
 
 #include "redis/RedisManager.hpp"
 #include "redis/RedisConfig.hpp"
@@ -87,6 +88,7 @@ int main(int argc, char** argv) {
   std::shared_ptr<WorkerManager> worker_manager;
   std::shared_ptr<TaskRepository> task_repo;
   std::shared_ptr<SchedulerLoop> scheduler_loop;
+  std::shared_ptr<dts::scheduler::DbBatcher> db_batcher;
   std::unique_ptr<SchedulerServiceImpl> service_impl;
 
   std::thread patrol_thread;
@@ -115,9 +117,12 @@ int main(int argc, char** argv) {
     LOG_INFO << "Initializing components...";
     worker_manager = std::make_shared<WorkerManager>(std::chrono::seconds(30));
     task_repo = std::make_shared<TaskRepository>(db_pool);
+    db_batcher = std::make_shared<dts::scheduler::DbBatcher>(db_pool);
+    db_batcher->Start();
+
     scheduler_loop = std::make_shared<SchedulerLoop>(task_repo, worker_manager);
-    service_impl =
-        std::make_unique<SchedulerServiceImpl>(worker_manager, task_repo);
+    service_impl = std::make_unique<SchedulerServiceImpl>(
+        worker_manager, task_repo, db_batcher);
 
     // 5. 启动 gRPC (支持环境变量端口)
     std::string server_address = "0.0.0.0:9090";
@@ -158,6 +163,7 @@ int main(int argc, char** argv) {
   g_cv.notify_all();
 
   if (scheduler_loop) scheduler_loop->Stop();
+  db_batcher->Stop();
 
   patrol_stop_flag = true;
   if (patrol_thread.joinable()) patrol_thread.join();

@@ -87,6 +87,10 @@ message UpdateTaskStatusRequest {
     // 如果是 SUCCESS (2)，这里是任务的 JSON 格式的执行结果
     // 对应你数据库中的 task.result (jsonb)
     string result_json = 4; 
+
+    string job_id =5;
+
+    int32 retry_count =6;
 }
 
 message UpdateTaskStatusResponse {

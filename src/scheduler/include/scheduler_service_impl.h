@@ -11,6 +11,7 @@ namespace dts {
 namespace scheduler {
 class WorkerManager;
 class TaskRepository;
+class DbBatcher;
 }  // namespace scheduler
 }  // namespace dts
 
@@ -22,7 +23,8 @@ class SchedulerServiceImpl final
  public:
   // 构造函数：依赖注入
   SchedulerServiceImpl(std::shared_ptr<WorkerManager> worker_manager,
-                       std::shared_ptr<TaskRepository> task_repository);
+                       std::shared_ptr<TaskRepository> task_repository,
+                       std::shared_ptr<DbBatcher> db_batcher);
 
   virtual ~SchedulerServiceImpl();
 
@@ -49,6 +51,7 @@ class SchedulerServiceImpl final
  private:
   std::shared_ptr<WorkerManager> worker_manager_;
   std::shared_ptr<TaskRepository> task_repository_;
+  std::shared_ptr<DbBatcher> db_batcher_;
 };
 
 }  // namespace scheduler

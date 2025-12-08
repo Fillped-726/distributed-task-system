@@ -5,7 +5,7 @@
 #include <nlohmann/json.hpp>
 
 #include "logger.hpp"
-#include "converters.hpp"
+// #include "converters.hpp" // 如果不再依赖 Proto 转换，可以移除
 
 namespace dts {
 namespace scheduler {
@@ -22,52 +22,137 @@ TaskRepository::TaskRepository(
 TaskRepository::~TaskRepository() {}
 
 // -----------------------------------------------------
-// 1. GetPendingTasks (拉取)
+// 1. HandleTaskFailure (失败处理 & 重试判定)
 // -----------------------------------------------------
-std::vector<dts::task::Task> TaskRepository::GetPendingTasks(int limit) {
-  std::vector<dts::task::Task> tasks;
-
+bool TaskRepository::HandleTaskFailure(const std::string& task_id,
+                                       const std::string& error_msg,
+                                       int worker_reported_retry) {
+  bool retrying = false;
   try {
     db_pool_->ExecuteTx([&](pqxx::work& tx) {
-      // 按优先级降序，提交时间升序 (先提交的高优先级任务先跑)
-      std::string sql = R"(
-                SELECT task_id, job_id, natural_id, func_name, func_params, 
-                       priority, max_retry, retry_count, timeout_ms 
-                FROM task 
-                WHERE state = $1 
-                ORDER BY priority DESC, submit_ts ASC 
-                LIMIT $2;
-            )";
+      // 1. 悲观锁锁定任务 (防止并发)
+      std::string sql_check =
+          "SELECT retry_count, max_retry FROM task WHERE task_id = $1 FOR "
+          "UPDATE";
+      pqxx::result r = tx.exec_params(sql_check, task_id);
 
-      // 直接转 int，简单粗暴且安全
-      pqxx::result r =
-          tx.exec_params(sql, static_cast<int>(dts::task::PENDING), limit);
+      if (r.empty()) return;  // 任务不存在？
 
-      for (auto row : r) {
-        dts::task::Task t;
-        t.set_task_id(row["task_id"].as<std::string>());
-        t.set_job_id(row["job_id"].as<std::string>());
-        t.set_func_name(row["func_name"].as<std::string>());
-        t.set_priority(row["priority"].as<uint32_t>());
-        t.set_timeout_ms(row["timeout_ms"].as<uint32_t>());
-        t.set_max_retry(row["max_retry"].as<uint32_t>());
-        t.set_retry_count(row["retry_count"].as<uint32_t>());
-        t.set_state(dts::task::PENDING);
+      int current_retry = r[0]["retry_count"].as<int>();
+      int max_retry = r[0]["max_retry"].as<int>();
 
-        // JSON -> Proto Struct 转换
+      // 2. 判断是否重试
+      if (current_retry < max_retry) {
+        LOG_WARN << "Retrying task " << task_id << " (" << current_retry + 1
+                 << "/" << max_retry << "). Error: " << error_msg;
+
+        // 重置状态为 PENDING，清空执行信息
+        std::string sql_retry = R"(
+            UPDATE task 
+            SET state = 0, -- PENDING
+                retry_count = retry_count + 1,
+                worker_id = NULL, start_ts = NULL, finish_ts = NULL, 
+                error_msg = $2
+            WHERE task_id = $1
+        )";
+        tx.exec_params(sql_retry, task_id, error_msg);
+        retrying = true;  // 告知上层推 Redis
+      } else {
+        LOG_ERROR << "Task " << task_id
+                  << " failed permanently. Error: " << error_msg;
+
+        // 标记为 FAILED
+        std::string sql_fail = R"(
+            UPDATE task 
+            SET state = 3, -- FAILED
+                finish_ts = EXTRACT(EPOCH FROM NOW())::BIGINT,
+                error_msg = $2
+            WHERE task_id = $1
+        )";
+        tx.exec_params(sql_fail, task_id, error_msg);
+        retrying = false;
+      }
+    });
+  } catch (const std::exception& e) {
+    LOG_ERROR << "[TaskRepo] HandleTaskFailure exception: " << e.what();
+    return false;
+  }
+  return retrying;
+}
+
+// -----------------------------------------------------
+// 2. GetTaskById (用于重试时捞取数据)
+// -----------------------------------------------------
+std::optional<dts::Task> TaskRepository::GetTaskById(
+    const std::string& task_id) {
+  try {
+    std::optional<dts::Task> result_task;
+
+    db_pool_->ExecuteTx([&](pqxx::work& tx) {
+      std::string sql = "SELECT * FROM task WHERE task_id = $1";
+      pqxx::result r = tx.exec_params(sql, task_id);
+
+      if (!r.empty()) {
+        const auto& row = r[0];
+        dts::Task t;
+        t.task_id = row["task_id"].as<std::string>();
+        t.job_id = row["job_id"].as<std::string>();
+        t.natural_id = row["natural_id"].as<std::string>();  // 之前可能漏了
+        t.func_name = row["func_name"].as<std::string>();
+        t.priority = row["priority"].as<uint32_t>();
+        t.max_retry = row["max_retry"].as<uint32_t>();
+        t.retry_count =
+            row["retry_count"].as<uint32_t>();  // 注意：这是 DB 里的最新值
+        t.timeout_ms = row["timeout_ms"].as<uint32_t>();
+
+        // 解析 Params
         if (!row["func_params"].is_null()) {
-          try {
-            std::string params_str = row["func_params"].as<std::string>();
-            if (!params_str.empty()) {
-              auto j = nlohmann::json::parse(params_str);
-              // 调用你的工具函数
-              dts::JsonToStruct(j, t.mutable_func_params());
-            }
-          } catch (const std::exception& e) {
-            LOG_ERROR << "JSON parse error for task " << t.task_id() << ": "
-                      << e.what();
+          auto params_str = row["func_params"].as<std::string>();
+          if (!params_str.empty()) {
+            t.func_params = nlohmann::json::parse(params_str);
           }
         }
+
+        // 其他字段按需填充...
+        result_task = std::move(t);
+      }
+    });
+
+    return result_task;
+  } catch (const std::exception& e) {
+    LOG_ERROR << "[TaskRepo] GetTaskById failed: " << e.what();
+    return std::nullopt;
+  }
+}
+
+// -----------------------------------------------------
+// 3. GetPendingTasks (保留用于 Patrol/兜底)
+// -----------------------------------------------------
+std::vector<dts::Task> TaskRepository::GetPendingTasks(int limit) {
+  std::vector<dts::Task> tasks;
+  try {
+    db_pool_->ExecuteTx([&](pqxx::work& tx) {
+      std::string sql = R"(
+            SELECT * FROM task 
+            WHERE state = 0 -- PENDING
+            ORDER BY priority DESC, submit_ts ASC 
+            LIMIT $1
+      )";
+      pqxx::result r = tx.exec_params(sql, limit);
+
+      for (auto row : r) {
+        dts::Task t;
+        t.task_id = row["task_id"].as<std::string>();
+        t.job_id = row["job_id"].as<std::string>();
+        t.func_name = row["func_name"].as<std::string>();
+        t.priority = row["priority"].as<uint32_t>();
+        t.timeout_ms = row["timeout_ms"].as<uint32_t>();
+
+        if (!row["func_params"].is_null()) {
+          auto s = row["func_params"].as<std::string>();
+          if (!s.empty()) t.func_params = nlohmann::json::parse(s);
+        }
+
         tasks.push_back(std::move(t));
       }
     });
@@ -78,7 +163,7 @@ std::vector<dts::task::Task> TaskRepository::GetPendingTasks(int limit) {
 }
 
 // -----------------------------------------------------
-// 2. UpdateTaskToRunning (抢占 - 乐观锁)
+// 4. UpdateTaskToRunning (保留 - 乐观锁)
 // -----------------------------------------------------
 bool TaskRepository::UpdateTaskToRunning(const std::string& task_id,
                                          const std::string& worker_id) {
@@ -86,159 +171,31 @@ bool TaskRepository::UpdateTaskToRunning(const std::string& task_id,
   try {
     db_pool_->ExecuteTx([&](pqxx::work& tx) {
       std::string sql = R"(
-                UPDATE task 
-                SET state = $1, 
-                    worker_id = $2, 
-                    start_ts = EXTRACT(EPOCH FROM (NOW()))::BIGINT 
-                WHERE task_id = $3
-                AND state = $4; -- 关键：CAS (Compare And Swap)
-            )";
-
-      pqxx::result r =
-          tx.exec_params(sql, static_cast<int>(dts::task::RUNNING), worker_id,
-                         task_id, static_cast<int>(dts::task::PENDING));
-
+            UPDATE task 
+            SET state = 1, -- RUNNING 
+                worker_id = $1, 
+                start_ts = EXTRACT(EPOCH FROM (NOW()))::BIGINT 
+            WHERE task_id = $2 AND state = 0 -- PENDING
+      )";
+      pqxx::result r = tx.exec_params(sql, worker_id, task_id);
       updated = (r.affected_rows() == 1);
     });
-    return updated;
   } catch (const std::exception& e) {
     LOG_ERROR << "[TaskRepo] UpdateTaskToRunning failed: " << e.what();
-    return false;
   }
+  return updated;
 }
 
 // -----------------------------------------------------
-// 3. HandleTaskCompletion (DAG 驱动)
-// -----------------------------------------------------
-bool TaskRepository::HandleTaskCompletion(
-    const dts::internal::UpdateTaskStatusRequest* request) {
-  try {
-    db_pool_->ExecuteTx([&](pqxx::work& tx) {
-      auto final_state = request->final_state();
-      auto task_id = request->task_id();
-
-      // 1. 更新当前任务
-      // 注意：这里我们把 result_json (string) 存入 result (jsonb)
-      // PostgreSQL 会自动处理 string 到 jsonb 的转换，只要 string 格式合法
-      std::string sql_update = R"(
-                UPDATE task 
-                SET state = $1, result = $2::jsonb, error_msg = $3, 
-                    finish_ts = EXTRACT(EPOCH FROM (NOW()))::BIGINT
-                WHERE task_id = $4;
-            )";
-
-      // 处理 result 可能为空的情况
-      std::string result_json =
-          request->result_json().empty() ? "{}" : request->result_json();
-
-      tx.exec_params(sql_update, static_cast<int>(final_state), result_json,
-                     request->error_msg(), task_id);
-
-      // 2. 状态流转
-      if (final_state == dts::task::SUCCESS) {
-        PropagateSuccess(tx, task_id);
-      } else if (final_state == dts::task::FAILED ||
-                 final_state == dts::task::TIMEOUT) {
-        HandleRetry(tx, task_id);
-      }
-    });
-    return true;
-  } catch (const std::exception& e) {
-    LOG_ERROR << "[TaskRepo] HandleTaskCompletion failed for task "
-              << request->task_id() << ": " << e.what();
-    return false;
-  }
-}
-
-// -----------------------------------------------------
-// 4. PropagateSuccess (DAG 核心 - 原子递减)
-// -----------------------------------------------------
-bool TaskRepository::PropagateSuccess(pqxx::work& tx,
-                                      const std::string& parent_task_id) {
-  // 查出所有子任务
-  std::string sql_find_children =
-      "SELECT child_task_id FROM task_edge WHERE parent_task_id = $1";
-  pqxx::result children = tx.exec_params(sql_find_children, parent_task_id);
-
-  if (children.empty()) return true;
-
-  LOG_INFO << "Propagating success from " << parent_task_id << " to "
-           << children.size() << " children.";
-
-  for (auto row : children) {
-    std::string child_id = row[0].as<std::string>();
-
-    // 原子递减，并返回新的值 (RETURNING 是 PG 的杀手级特性)
-    std::string sql_decrement = R"(
-            UPDATE task 
-            SET pending_dependencies = pending_dependencies - 1 
-            WHERE task_id = $1 AND state = $2
-            RETURNING pending_dependencies;
-        )";
-
-    pqxx::result res = tx.exec_params(
-        sql_decrement, child_id, static_cast<int>(dts::task::WAITING_DEPS));
-
-    if (res.empty()) {
-      // 这种情况可能发生：比如 child 已经被取消了，或者逻辑删除了
-      continue;
-    }
-
-    int remaining_deps = res[0][0].as<int>();
-    if (remaining_deps == 0) {
-      // 依赖全部满足，变为 PENDING，等待调度
-      LOG_INFO << "Task " << child_id << " is now READY (dependencies met).";
-      std::string sql_ready = "UPDATE task SET state = $1 WHERE task_id = $2";
-      tx.exec_params(sql_ready, static_cast<int>(dts::task::PENDING), child_id);
-    }
-  }
-  return true;
-}
-
-// -----------------------------------------------------
-// 5. HandleRetry (悲观锁 FOR UPDATE)
-// -----------------------------------------------------
-bool TaskRepository::HandleRetry(pqxx::work& tx, const std::string& task_id) {
-  // 锁定该行，防止并发修改
-  std::string sql_check =
-      "SELECT retry_count, max_retry FROM task WHERE task_id = $1 FOR UPDATE";
-  pqxx::result res = tx.exec_params(sql_check, task_id);
-
-  if (res.empty()) return false;
-
-  int retry_count = res[0]["retry_count"].as<int>();
-  int max_retry = res[0]["max_retry"].as<int>();
-
-  if (retry_count < max_retry) {
-    LOG_WARN << "Retrying task " << task_id << " (" << retry_count + 1 << "/"
-             << max_retry << ")";
-
-    std::string sql_retry = R"(
-            UPDATE task 
-            SET state = $1, retry_count = retry_count + 1, 
-                worker_id = NULL, start_ts = NULL, finish_ts = NULL, 
-                error_msg = NULL, result = NULL
-            WHERE task_id = $2;
-        )";
-    tx.exec_params(sql_retry, static_cast<int>(dts::task::PENDING), task_id);
-  } else {
-    LOG_ERROR << "Task " << task_id << " failed permanently after " << max_retry
-              << " retries.";
-    // 状态已经在 HandleTaskCompletion 里被设为 FAILED 了，这里不需要再改
-  }
-  return true;
-}
-
-// -----------------------------------------------------
-// 6. 辅助功能
+// 5. RevertTaskToPending (保留)
 // -----------------------------------------------------
 bool TaskRepository::RevertTaskToPending(const std::string& task_id) {
   try {
     db_pool_->ExecuteTx([&](pqxx::work& tx) {
       tx.exec_params(
-          "UPDATE task SET state = $1, worker_id = NULL, start_ts = NULL WHERE "
-          "task_id = $2",
-          static_cast<int>(dts::task::PENDING), task_id);
+          "UPDATE task SET state = 0, worker_id = NULL, start_ts = NULL WHERE "
+          "task_id = $1",
+          task_id);
     });
     return true;
   } catch (...) {
@@ -246,20 +203,19 @@ bool TaskRepository::RevertTaskToPending(const std::string& task_id) {
   }
 }
 
+// -----------------------------------------------------
+// 6. RequeueOrphanedTasks (保留)
+// -----------------------------------------------------
 int TaskRepository::RequeueOrphanedTasks(const std::string& dead_worker_id) {
   int count = 0;
   try {
     db_pool_->ExecuteTx([&](pqxx::work& tx) {
       pqxx::result r = tx.exec_params(
-          "UPDATE task SET state=$1, worker_id=NULL, start_ts=NULL WHERE "
-          "worker_id=$2 AND state=$3",
-          static_cast<int>(dts::task::PENDING), dead_worker_id,
-          static_cast<int>(dts::task::RUNNING));
+          "UPDATE task SET state=0, worker_id=NULL, start_ts=NULL WHERE "
+          "worker_id=$1 AND state=1",
+          dead_worker_id);
       count = r.affected_rows();
     });
-    if (count > 0)
-      LOG_WARN << "Requeued " << count << " orphaned tasks from "
-               << dead_worker_id;
   } catch (...) {
   }
   return count;

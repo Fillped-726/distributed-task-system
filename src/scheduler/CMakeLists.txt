@@ -10,6 +10,7 @@ add_library(dts_scheduler_core STATIC
     src/task_repository.cpp
     src/worker_manager.cpp
     src/scheduler_loop.cpp
+    src/db_batcher.cpp
 )
 
 # C++20 标准

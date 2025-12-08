@@ -58,6 +58,7 @@ bool SchedulerClient::SendHeartbeat(const std::string& worker_id,
 
 bool SchedulerClient::UpdateTaskStatus(const std::string& task_id,
                                        dts::TaskState state,
+                                       const std::string& job_id,
                                        const std::string& error_msg,
                                        const std::string& result_json) {
   dts::internal::UpdateTaskStatusRequest request;
@@ -65,6 +66,7 @@ bool SchedulerClient::UpdateTaskStatus(const std::string& task_id,
   request.set_final_state(static_cast<dts::task::TaskState>(state));
   request.set_error_msg(error_msg);
   request.set_result_json(result_json);
+  request.set_job_id(job_id);
 
   dts::internal::UpdateTaskStatusResponse response;
   grpc::ClientContext context;

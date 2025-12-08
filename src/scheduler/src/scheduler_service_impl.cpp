@@ -2,10 +2,58 @@
 
 #include "worker_manager.h"
 #include "task_repository.h"
+#include "db_batcher.hpp"
 #include "logger.hpp"
 #include "dts/error/error.pb.h"
 #include "dts/error/sys_error.pb.h"
 #include "dts/task/task_state.grpc.pb.h"
+
+#include "redis/RedisManager.hpp"
+#include "redis/RedisKeys.hpp"
+#include "utils/TaskSerializer.hpp"
+
+using dts::common::redis::RedisManager;
+using dts::common::utils::TaskSerializer;
+
+namespace keys = dts::common::redis::keys;
+
+namespace {
+
+// 脚本内容 (和我们之前写的一致)
+const std::string kCompleteTaskScript = R"(
+    local children = redis.call('SMEMBERS', KEYS[1])
+    if #children == 0 then return 0 end
+    local triggered = 0
+    for _, child_id in ipairs(children) do
+        local remain = redis.call('HINCRBY', KEYS[2], child_id, -1)
+        if remain == 0 then
+            local meta_key = "dts:task:meta:" .. child_id
+            local payload = redis.call('GET', meta_key)
+            if payload then
+                redis.call('XADD', KEYS[3], '*', 'payload', payload, 'task_id', child_id, 'job_id', ARGV[1])
+                triggered = triggered + 1
+                redis.call('HDEL', KEYS[2], child_id)
+            end
+        elseif remain < 0 then
+            redis.call('XADD', KEYS[4], '*', 'type', 'NEGATIVE_DEPS', 'task_id', child_id)
+        end
+    end
+    redis.call('DEL', KEYS[1])
+    return triggered
+)";
+
+// 缓存 SHA1
+std::string g_complete_task_sha;
+
+void EnsureScriptLoaded() {
+  if (g_complete_task_sha.empty()) {
+    g_complete_task_sha =
+        RedisManager::GetInstance().LoadScript(kCompleteTaskScript);
+    LOG_INFO << "Lua script loaded, SHA: " << g_complete_task_sha;
+  }
+}
+
+}  // namespace
 
 namespace dts {
 namespace scheduler {
@@ -15,8 +63,11 @@ namespace scheduler {
 // -----------------------------------------------------
 SchedulerServiceImpl::SchedulerServiceImpl(
     std::shared_ptr<WorkerManager> worker_manager,
-    std::shared_ptr<TaskRepository> task_repository)
-    : worker_manager_(worker_manager), task_repository_(task_repository) {
+    std::shared_ptr<TaskRepository> task_repository,
+    std::shared_ptr<DbBatcher> db_batcher)
+    : worker_manager_(worker_manager),
+      task_repository_(task_repository),
+      db_batcher_(db_batcher) {
   if (!worker_manager_) {
     LOG_FATAL << "SchedulerServiceImpl initialized with null WorkerManager!";
   }
@@ -104,84 +155,80 @@ grpc::Status SchedulerServiceImpl::UpdateTaskStatus(
   std::string task_id = request->task_id();
   dts::task::TaskState state = request->final_state();
 
+  // [注意] 我们需要 job_id 来定位 Redis 中的依赖 Hash 表
+  // 请确保你的 Worker 在汇报状态时，把 job_id 也传回来！
+  // 如果 proto 里没有，请去 dts/internal/internal_service.proto 加上 string
+  // job_id = ...
+  std::string job_id = request->job_id();
+
   dts::SetRequestId("UPD-" + task_id);
 
-  LOG_INFO << "[UpdateTaskStatus] Task: " << task_id
+  LOG_INFO << "[UpdateTaskStatus] Task: " << task_id << ", Job: " << job_id
            << ", State: " << dts::task::TaskState_Name(state);
 
   if (task_id.empty()) return grpc::Status::OK;
-  if (!task_repository_) {
-    LOG_ERROR << "TaskRepository is null";
-    return grpc::Status(grpc::INTERNAL, "Internal Server Error");
-  }
 
   // ---------------------------------------------------------
-  // 分支处理：成功 vs 失败
+  // 分支 1：任务成功 (走 Redis Lua + 异步落盘)
   // ---------------------------------------------------------
   if (state == dts::task::TaskState::SUCCESS) {
-    // [关键] 成功分支：可能会触发后续任务
-    // 我们假设 TaskRepository 有一个新方法: FinishTaskAndGetReadyChildren
-    // 它负责原子性地更新 DB，并返回那些 "刚刚变成 PENDING" 的子任务
-    std::vector<dts::Task> next_tasks =
-        task_repository_->FinishTaskAndGetReadyChildren(
-            task_id,
-            request->result()  // 结果 JSON
-        );
+    // 1. [极速] 执行 Lua 脚本，触发 DAG
+    EnsureScriptLoaded();
 
-    // 如果有新任务就绪，推送到 Redis
-    if (!next_tasks.empty()) {
-      LOG_INFO << "Task " << task_id << " triggered " << next_tasks.size()
+    std::vector<std::string> keys = {
+        keys::dag::Children(task_id),       // KEYS[1]: 子任务集合
+        keys::dag::DependencyHash(job_id),  // KEYS[2]: 依赖计数表
+        std::string(keys::stream::kTasks),  // KEYS[3]: 任务队列
+        std::string(keys::stream::kErrors)  // KEYS[4]: 错误队列
+    };
+    std::vector<std::string> args = {job_id};  // ARGV[1]
+
+    // 这一步耗时通常 < 1ms
+    auto triggered_opt =
+        RedisManager::GetInstance().EvalSha(g_complete_task_sha, keys, args);
+
+    if (triggered_opt) {
+      LOG_INFO << "Lua execution success. Triggered " << *triggered_opt
                << " next tasks.";
-
-      auto& redis = RedisManager::GetInstance();
-      int pushed_count = 0;
-
-      for (const auto& task : next_tasks) {
-        // 1. 序列化
-        auto args_opt = TaskSerializer::ToXAddArgs(task);
-        if (!args_opt) {
-          LOG_ERROR << "Failed to serialize child task " << task.task_id;
-          continue;
-        }
-
-        // 2. 推送 Redis Stream
-        auto msg_id_opt = redis.XAdd(keys::stream::kTasks, *args_opt);
-        if (msg_id_opt) {
-          pushed_count++;
-        } else {
-          LOG_WARN << "Failed to push child task " << task.task_id
-                   << " to Redis!";
-        }
-      }
-      LOG_DEBUG << "Pushed " << pushed_count << " child tasks to Redis.";
     } else {
-      LOG_DEBUG << "Task " << task_id
-                << " finished, but no new tasks triggered.";
+      // 如果 Lua 失败（极罕见），为了安全，可以 fallback 到 DB 逻辑，
+      // 或者直接报错等待重试。这里简单处理：只记录日志。
+      LOG_ERROR << "Lua execution failed for task " << task_id;
     }
 
-  } else {
-    // [关键] 失败分支：处理重试或标记失败
-    // 调用旧的 UpdateStatus 方法即可，不需要触发子任务
-    // 如果需要重试，TaskRepository 内部逻辑会将状态改回 PENDING 吗？
-    // 如果是重试，你也需要在这里重新推 Redis！
-    // 假设 Repository 的 HandleTaskFailure 返回 true 表示 "需要重试"
+    // 2. [异步] 放入内存队列，等待批量写入 DB
+    // 替代了原来的 task_repository_->FinishTaskAndGetReadyChildren
+    if (db_batcher_) {
+      db_batcher_->AddStatusUpdate(task_id, state, request->result_json());
+    } else {
+      LOG_ERROR << "DbBatcher is null! Status update might be lost.";
+    }
+
+  }
+  // ---------------------------------------------------------
+  // 分支 2：任务失败 (走 DB 同步处理 + 重试逻辑)
+  // ---------------------------------------------------------
+  else {
+    if (!task_repository_) {
+      return grpc::Status(grpc::INTERNAL, "TaskRepo missing");
+    }
 
     bool need_retry = task_repository_->HandleTaskFailure(
-        task_id, request->error_msg(),
-        request->retry_count()  // Worker 汇报时可能带上当前的重试次数
-    );
+        task_id, request->error_msg(), request->retry_count());
 
     if (need_retry) {
-      // 如果决定重试，我们需要重新获取该任务的完整信息并推 Redis
+      // 如果需要重试，重新获取任务信息并推回 Redis
       auto retry_task_opt = task_repository_->GetTaskById(task_id);
       if (retry_task_opt) {
         LOG_WARN << "Task " << task_id
-                 << " failed but will retry. Pushing back to Redis.";
+                 << " failed, retrying... Pushing back to Redis.";
         auto args_opt = TaskSerializer::ToXAddArgs(*retry_task_opt);
         if (args_opt) {
           RedisManager::GetInstance().XAdd(keys::stream::kTasks, *args_opt);
         }
       }
+    } else {
+      // 彻底失败，不需要做额外操作，DB 状态已经是 FAILED 了
     }
   }
 
