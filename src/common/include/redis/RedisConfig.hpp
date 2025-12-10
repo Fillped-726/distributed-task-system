@@ -10,7 +10,7 @@ struct RedisConfig {
   int port = 6379;
   std::string password = "";
   int pool_size = 5;
-  int socket_timeout_ms = 1000;
+  int socket_timeout_ms = 5000;
   int connect_timeout_ms = 1000;
 
   // 安全转换

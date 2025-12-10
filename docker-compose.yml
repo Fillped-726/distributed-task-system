@@ -11,7 +11,7 @@ services:
   # =========================================
   db:
     image: postgres:15
-    command: postgres -c max_connections=200
+    command: postgres -c "synchronous_commit=off" -c "max_connections=300"
     container_name: dts_postgres
     restart: always
     environment:
@@ -40,6 +40,8 @@ services:
     #以此配置开启 AOF 持久化，防止 Redis 意外挂掉时丢失太多数据
     command: ["redis-server", "--appendonly", "yes"] 
     restart: always
+    environment:
+      - REDIS_POOL_SIZE=10
     networks:
       - dts_net
 
@@ -71,45 +73,42 @@ services:
       - dts_net
 
   # =========================================
-  # 3. Worker 01 (节点 1)
+  # Worker Cluster (支持 --scale 扩容)
   # =========================================
-  worker-01:
-    image: dts-core:latest # 复用上面的镜像，不需要重复 build
-    container_name: dts_worker_01
-    hostname: worker-01    # [关键] 固定主机名，Scheduler 可以通过 "worker-01" 解析到 IP
-    command: ["./dts_worker", "worker-01"] # 参数1: 这里的名字用于生成 ID
-    restart: always
-    environment:
-      - DTS_RUN_MODE=docker
-      # 告诉 Worker Scheduler 在哪 (使用 Service Name)
-      - SCHEDULER_ADDR=scheduler:9090
-      # 绑定 0.0.0.0 保证容器外可访问
-      - WORKER_BIND_ADDR=0.0.0.0:50051
-      # [注意] 如果你的 Worker 代码会自动获取 hostname 发送给 Scheduler，
-      - WORKER_ADVERTISE_ADDR=worker-01:50051
-    depends_on:
-      - scheduler
-    networks:
-      - dts_net
-
-  # =========================================
-  # 4. Worker 02 (节点 2 - 模拟分布式)
-  # =========================================
-  worker-02:
+  worker:
     image: dts-core:latest
-    container_name: dts_worker_02
-    hostname: worker-02    # [关键] 独立的主机名
-    command: ["./dts_worker", "worker-02"]
     restart: always
-    environment:
-      - DTS_RUN_MODE=docker
-      - SCHEDULER_ADDR=scheduler:9090
-      - WORKER_BIND_ADDR=0.0.0.0:50051 
-      - WORKER_ADVERTISE_ADDR=worker-02:50051
+
+    deploy:
+      replicas: 5
+
     depends_on:
       - scheduler
     networks:
       - dts_net
+    environment:
+      - DTS_RUN_MODE=docker
+      - SCHEDULER_ADDR=scheduler:9090
+      - WORKER_BIND_ADDR=0.0.0.0:50051
+      # 注意：WORKER_ADVERTISE_ADDR 这里不写死，由下面的 command 动态注入
+    
+    # [核心黑魔法] 使用 Shell 动态获取容器 IP 和 ID
+    entrypoint: ["/bin/sh", "-c"]
+    command: 
+      - |
+        # 1. 获取容器内部 IP (Docker 网络分配的)
+        export MY_IP=$$(hostname -i)
+        
+        # 2. 生成唯一 Worker ID (利用容器的主机名，通常是随机 Hash)
+        export WORKER_ID="worker-$$(hostname)"
+        
+        # 3. 设置回发给 Scheduler 的地址 (IP:Port)
+        export WORKER_ADVERTISE_ADDR="$$MY_IP:50051"
+        
+        echo "🚀 Starting $$WORKER_ID at $$WORKER_ADVERTISE_ADDR..."
+        
+        # 4. 启动 C++ 程序 (将动态生成的 ID 传进去)
+        ./dts_worker "$$WORKER_ID"
 
   # =========================================
   # 5. API Server (任务提交入口)

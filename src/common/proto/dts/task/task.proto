@@ -24,7 +24,7 @@ message Task {
   uint32 priority    = 3;
   TaskState state    = 4;
   string func_name   = 5;
-  google.protobuf.Struct func_params = 6;
+  string func_params = 6;
   dts.common.Resource required = 7;
   dts.common.Shard shard       = 8;
   uint32 timeout_ms  = 9;

@@ -58,8 +58,8 @@ class DbBatcher {
   std::atomic<bool> stop_flag_{false};
 
   // 配置参数
-  const size_t kBatchSize = 100;        // 每次最多刷 100 条
-  const size_t kFlushIntervalMs = 500;  // 最长等待 500ms
+  const size_t kBatchSize = 100;         // 每次最多刷 100 条
+  const size_t kFlushIntervalMs = 1000;  // 最长等待 1000ms
 };
 
 }  // namespace dts::scheduler

@@ -54,13 +54,15 @@ void DbBatcher::RunLoop() {
 
       // 等待条件：队列不空 OR 停止信号
       // 使用 wait_for 实现“每隔 kFlushIntervalMs 至少醒一次”
-      cv_.wait_for(lock, std::chrono::milliseconds(kFlushIntervalMs),
-                   [this] { return !queue_.empty() || stop_flag_; });
+      cv_.wait_for(lock, std::chrono::milliseconds(kFlushIntervalMs), [this] {
+        return queue_.size() >= kBatchSize || stop_flag_;
+      });
 
       if (queue_.empty()) {
         if (stop_flag_) break;  // 真的没事做了且要退出
         continue;               // 超时醒来，还是空的，继续等
       }
+      LOG_INFO << "queue_.size:" << queue_.size();
 
       // 搬运数据到局部 batch
       while (!queue_.empty() && batch.size() < kBatchSize) {
@@ -80,6 +82,8 @@ void DbBatcher::FlushBatch(std::vector<TaskUpdateOp>& batch) {
   if (batch.empty()) return;
 
   try {
+    // 定义一个变量存影响行数
+    int affected = 0;
     db_pool_->ExecuteTx([&](pqxx::work& tx) {
       std::stringstream ss;
 
@@ -100,12 +104,12 @@ void DbBatcher::FlushBatch(std::vector<TaskUpdateOp>& batch) {
       }
 
       ss << ") AS v(task_id, state, result, error_msg) "
-         << "WHERE t.task_id = v.task_id";
+         << "WHERE t.task_id = v.task_id::uuid";
 
       tx.exec(ss.str());
     });
 
-    LOG_INFO << "Flushed " << batch.size() << " task updates to DB.";
+    LOG_INFO << "Flushed " << batch.size();
 
   } catch (const std::exception& e) {
     LOG_ERROR << "Failed to flush DB batch: " << e.what();

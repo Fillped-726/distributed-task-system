@@ -155,10 +155,6 @@ grpc::Status SchedulerServiceImpl::UpdateTaskStatus(
   std::string task_id = request->task_id();
   dts::task::TaskState state = request->final_state();
 
-  // [注意] 我们需要 job_id 来定位 Redis 中的依赖 Hash 表
-  // 请确保你的 Worker 在汇报状态时，把 job_id 也传回来！
-  // 如果 proto 里没有，请去 dts/internal/internal_service.proto 加上 string
-  // job_id = ...
   std::string job_id = request->job_id();
 
   dts::SetRequestId("UPD-" + task_id);
@@ -172,9 +168,6 @@ grpc::Status SchedulerServiceImpl::UpdateTaskStatus(
   // 分支 1：任务成功 (走 Redis Lua + 异步落盘)
   // ---------------------------------------------------------
   if (state == dts::task::TaskState::SUCCESS) {
-    // 1. [极速] 执行 Lua 脚本，触发 DAG
-    EnsureScriptLoaded();
-
     std::vector<std::string> keys = {
         keys::dag::Children(task_id),       // KEYS[1]: 子任务集合
         keys::dag::DependencyHash(job_id),  // KEYS[2]: 依赖计数表
@@ -196,6 +189,9 @@ grpc::Status SchedulerServiceImpl::UpdateTaskStatus(
       LOG_ERROR << "Lua execution failed for task " << task_id;
     }
 
+    // 1. [极速] 执行 Lua 脚本，触发 DAG
+    EnsureScriptLoaded();
+
     // 2. [异步] 放入内存队列，等待批量写入 DB
     // 替代了原来的 task_repository_->FinishTaskAndGetReadyChildren
     if (db_batcher_) {
@@ -213,22 +209,37 @@ grpc::Status SchedulerServiceImpl::UpdateTaskStatus(
       return grpc::Status(grpc::INTERNAL, "TaskRepo missing");
     }
 
+    // 1. DB 层面处理失败逻辑 (增加 retry_count, 判断是否需要重试)
     bool need_retry = task_repository_->HandleTaskFailure(
         task_id, request->error_msg(), request->retry_count());
 
     if (need_retry) {
-      // 如果需要重试，重新获取任务信息并推回 Redis
+      LOG_WARN << "Task " << task_id
+               << " failed, retrying... Pushing back to Redis.";
+
+      // 2. 获取 Job ID
       auto retry_task_opt = task_repository_->GetTaskById(task_id);
+
       if (retry_task_opt) {
-        LOG_WARN << "Task " << task_id
-                 << " failed, retrying... Pushing back to Redis.";
-        auto args_opt = TaskSerializer::ToXAddArgs(*retry_task_opt);
-        if (args_opt) {
-          RedisManager::GetInstance().XAdd(keys::stream::kTasks, *args_opt);
-        }
+        const auto& task = *retry_task_opt;
+
+        // 3. [核心修改] 使用新的轻量级接口
+        // 不需要序列化 Payload，只需要 ID 和 JobID
+        auto args = TaskSerializer::ToXAddArgs(task.task_id, task.job_id);
+
+        // 4. 推入 Redis Stream (作为指针)
+        // Worker 抢到后，会拿着 ID 去 Redis Meta 里查静态参数，
+        // 拿着 retry_count (从 DB 获取) 决定是否继续。
+        RedisManager::GetInstance().XAdd(keys::stream::kTasks, args);
+
+      } else {
+        LOG_ERROR << "Critical: Task needed retry but not found in DB: "
+                  << task_id;
       }
     } else {
-      // 彻底失败，不需要做额外操作，DB 状态已经是 FAILED 了
+      // 彻底失败 (Exceeded max_retry)
+      // DB 状态已经是 FAILED，不需要额外操作
+      LOG_ERROR << "Task " << task_id << " failed permanently after retries.";
     }
   }
 

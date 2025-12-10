@@ -50,7 +50,7 @@ int main(int argc, char* argv[]) {
     return 1;
   }
   dts::common::utils::InitWithRetry("Database", [&]() {
-    db_pool = std::make_shared<DatabasePool>(env_conn_string, 30);
+    db_pool = std::make_shared<DatabasePool>(env_conn_string, 20);
   });
 
   // ---------------------------------------------------------------------------
@@ -85,22 +85,17 @@ int main(int argc, char* argv[]) {
 
     // 如果是 Debug 模式，可以打印具体的 JSON
     // LOG(INFO) << "Handle SubmitTask. JobID: " << req_pb->job_id();
+    std::optional<dts::api_server::DagCommitContext> ctx_opt;
 
     try {
-      CppSubmitDagRequest cpp_req = dts::ConvertPbFromDagRequest(req_pb);
-      bool success = false;
-
       // 执行事务
       pool->ExecuteTx([&](pqxx::work& tx) {
-        // 在这里面：
-        // 1. 写 DB (Task + Edge)
-        // 2. 写 Redis Stream (XADD)
-        // 3. 返回 true/false
-        success = submitter->handleSubmitDag(cpp_req, tx);
+        ctx_opt = submitter->PersistDagToDB(*req_pb, tx);
       });
 
-      if (success) {
+      if (ctx_opt) {
         resp_pb->mutable_header();
+        submitter->DispatchDagToRedis(*req_pb, *ctx_opt);
         LOG(INFO) << "SubmitTask finished successfully.";
       } else {
         auto* err = resp_pb->mutable_header()->mutable_error();

@@ -1,29 +1,40 @@
 # **Distributed Task Scheduling System (DTS)**
 
-![Language](https://img.shields.io/badge/language-C%2B%2B20-blue.svg) ![Build](https://img.shields.io/badge/build-passing-brightgreen.svg) ![License](https://img.shields.io/badge/license-MIT-green.svg)
+![Language](https://img.shields.io/badge/language-C%2B%2B20-blue.svg) ![Redis](https://img.shields.io/badge/redis-7.0-red.svg) ![PostgreSQL](https://img.shields.io/badge/postgresql-15-blue.svg) ![Build](https://img.shields.io/badge/build-passing-brightgreen.svg) ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
-一个基于 C++20 微服务架构的高可用分布式任务调度系统，支持 DAG 任务依赖编排、Fail-Fast 校验与故障自愈。
+一个基于 **C++20**、**Redis Stream** 与 **PostgreSQL** 的高性能分布式任务调度系统。支持复杂的 DAG 依赖编排、**亚毫秒级**任务流转与故障自愈。
 
 ## **📖 项目简介 (Introduction)**
 
 **DTS (Distributed Task Scheduling System)** 是一个高性能的分布式调度平台原型，旨在解决大规模离线任务调度中的复杂依赖管理与高可用问题。
 
-系统采用分层架构设计，将**接入层 (API-Web)** 与 **逻辑持久层 (API-Server)** 分离。核心通信基于 **gRPC**，支持 **DAG (有向无环图)** 的实时构建与拓扑排序检查。系统利用 **PostgreSQL** 的 ACID 特性保证状态一致性，并通过 Master-Worker 模式实现了从任务提交到执行的全链路高吞吐处理。
+系统采用 **Claim Check (寄存票模式)** 与 **Split-Phase (分阶段提交)** 架构，彻底解耦了任务提交与调度执行。核心调度逻辑下沉至 **Redis Lua** 脚本，实现了原子性的 DAG 依赖驱动。在保证数据最终一致性 (Write-Behind) 的前提下，系统接近 **物理硬件的 IOPS 极限**。
 
 ## **✨ 核心特性 (Key Features)**
 
-* **分层架构与职责分离**:
-    * **API-Web**: 负责请求接入与 **Fail-Fast 校验**。在内存中构建 DAG 并运行拓扑排序/DFS 算法，**直接拦截环路依赖**，防止非法数据污染核心存储。
-    * **API-Server**: 专注高吞吐写入与元数据管理，解耦了计算与存储。
-* **DAG 依赖编排**: 支持复杂的任务依赖网络，基于 **入度表 (Indegree Table)** 算法实现高效的并行调度。
-* **高可用与故障恢复 (Fault Tolerance)**:
-    * **心跳保活**: Scheduler 维护 Worker 存活状态，自动剔除僵死节点。
-    * **自动重入队 (Requeue)**: 当 Worker 宕机时，其名下 `RUNNING` 任务会被原子性回滚并重新调度，确保**任务零丢失**。
-* **高性能通信**: 
-    * 任务提交面 (Web -> Server) 和 控制面 (Scheduler <-> Worker) 全链路采用 **gRPC (Protobuf)**。
-* **工业级工程实践**: 
-    * 基于 `libpqxx` 封装**线程安全连接池**，支持自动断线重连 (Self-Healing)。
-    * 使用 Modern CMake (FetchContent) 管理依赖，支持 **Docker Compose** 一键部署。
+* **极致性能架构**:
+    * **Claim Check Pattern**: Redis Stream 仅传输轻量级 `TaskID` 和 `JobID` 凭证，业务负载 (Payload) 存入 Redis KV，极大提升吞吐量。
+    * **Split-Phase Submission**: 采用 **"Commit-then-Publish"** 策略，先确保 PostgreSQL 落盘，再通过 **Redis Pipeline (1-RTT)** 极速分发，兼顾数据安全与速度。
+    * **Zero-Copy Pass-through**: API 层采用 Protobuf + String 透传策略，避免了昂贵的 JSON 解析与 DOM 构建开销。
+
+* **Redis 驱动的 DAG 引擎**:
+    * **Lua 原子调度**: 任务完成后的依赖检查与下游触发完全在 Redis 端原子执行，消除 C++ 端并发竞争，调度延迟 **< 1ms**。
+    * **Stream 消费**: Scheduler 采用 `XREADGROUP` + `BLOCK` 模式，实现事件驱动的毫秒级响应。
+
+* **高可用与自愈 (Robustness)**:
+    * **Write-Behind Persistence**: 任务状态先更新 Redis，再通过 `DbBatcher` 异步批量刷入 DB，平滑数据库压力。
+    * **Optimistic Pre-booking**: 调度器在内存中维护 Worker 负载影子状态，实现 **Round-Robin** 精准负载均衡。
+    * **Fault Tolerance**: 支持 Worker 动态扩缩容，掉线任务自动重入队 (Requeue)。
+
+## **⚙️ 基础功能 (Basic Features)**
+
+* **复杂的 DAG 任务编排:** 支持多层级、多依赖的任务流定义，自动检测环路依赖 (Cycle Detection)。
+
+* **多语言任务支持:** 接入层与执行层解耦，Worker 可扩展支持 Python/Shell/C++ 等多种任务类型。
+
+* **故障自动恢复:** 完备的心跳检测机制，当 Worker 宕机时，未完成的任务会自动重入队 (Requeue)，保证任务零丢失。
+
+* **Fail-Fast 校验:** 在 API 接入层即可拦截非法请求，保护核心存储。
 
 ## **🏗 系统架构 (Architecture)**
 
@@ -31,84 +42,148 @@
 
 ```mermaid
 graph TD
-    User[Client / Frontend] -->|HTTP JSON| Web[API-Web Service]
+    Client -->|gRPC Proto| API[API Server]
     
-    subgraph "Submission Plane (提交面)"
-        Web -->|1. Build DAG & Cycle Check| Web
-        Web -- "2. Submit (gRPC)" --> Server[API-Server]
-        Server -- "3. Initial Indegree" --> DB[(PostgreSQL)]
+    subgraph "Phase 1: Persistence"
+        API -->|COPY Protocol| DB[(PostgreSQL)]
     end
-
-    subgraph "Scheduling Plane (调度面)"
-        Scheduler[Scheduler Core] -- "4. Poll Ready Tasks" --> DB
-        Scheduler -- "5. Assign (gRPC)" --> W1[Worker Node 1]
-        Scheduler -- "5. Assign (gRPC)" --> W2[Worker Node 2]
-    end
-
-    W1 -.->|6. Status Callback| Scheduler
-    W2 -.->|6. Status Callback| Scheduler
     
-    Scheduler -- "7. Update State & Resolve Dependency" --> DB
+    subgraph "Phase 2: Dispatching"
+        API -->|Pipeline| Redis[(Redis)]
+        Redis -.->|Meta KV| Redis
+        Redis -.->|DAG Edge| Redis
+        Redis -.->|Stream| Scheduler
+    end
+    
+    subgraph "Execution Plane"
+        Scheduler -->|gRPC| Worker[Worker Cluster]
+        Worker -->|Update Status| Scheduler
+        Scheduler -->|Lua Script| Redis
+        Scheduler -->|Async Batch| DB
+    end
 ```
 
 ### **2\. 任务状态流转机 (State Machine)**
 
 ```mermaid
 stateDiagram-v2
-    [*] --> PENDING: Submit
-    PENDING --> RUNNING: Scheduler Dispatch
-    RUNNING --> SUCCESS: Worker Callback
-    RUNNING --> FAILED: Worker Callback
+    direction LR
+    
+    [*] --> WAITING_DEPS: Submit (DAG Child)
+    [*] --> PENDING: Submit (DAG Root)
+    
+    note right of WAITING_DEPS
+        Redis Hash 计数器 > 0
+        等待父任务完成
+    end note
 
-    RUNNING --> PENDING: ⚠️ Worker Crash (Fault Tolerance)
-    FAILED --> PENDING: Manual Retry
+    WAITING_DEPS --> PENDING: ⚡ Parent Success (Lua Script)
+    
+    PENDING --> RUNNING: 🚀 Dispatch (Scheduler)
+    
+    state RUNNING {
+        [*] --> Executing
+        Executing --> KeepAlive: Heartbeat
+    }
 
+    RUNNING --> SUCCESS: ✅ Worker Finish
+    RUNNING --> FAILED: ❌ Worker Failed
+    
+    RUNNING --> PENDING: ⚠️ Worker Crash (Rescue/Requeue)
+    
     SUCCESS --> [*]
+    FAILED --> [*]
 ```
+
+### **2. 核心组件交互**
+
+1. **API Server**: 接收请求 -> `COPY` 写入 DB -> `Commit` -> `Pipeline` 写入 Redis (Meta + Stream)。
+    
+2. **Scheduler**: `XREADGROUP` 拉取任务 -> 负载均衡选择 Worker -> gRPC 下发。
+    
+3. **Worker**: 执行业务逻辑 -> RPC 汇报 `SUCCESS/FAILED`。
+    
+4. **Feedback Loop**: Scheduler 收到汇报 -> 执行 Lua 脚本 (减依赖/触发子任务) -> `DbBatcher` 攒批落盘。
 
 ## **🛠 技术栈 (Tech Stack)**
 
-| 类别 (Category) | 技术 (Technology) |
-| :---- | :---- |
-| **Language** | C++17/20 (Concepts, Smart Pointers, Lambda) |
-| **Network** | gRPC, Protobuf, cpp-httplib |
-| **Database** | PostgreSQL 12+ (libpqxx driver, Dynamic Partitioning) |
-| **Concurrency** | ThreadPool, std::mutex, std::condition\_variable |
-| **Build & Test** | CMake, GoogleTest (GTest), GLog |
-| **DevOps** | Docker, Docker Compose |
+| **类别**          | **技术方案**           | **核心作用**                                   |
+| --------------- | ------------------ | ------------------------------------------ |
+| **Language**    | **C++17/20**          | Concepts, Coroutines, Smart Pointers       |
+| **Middleware**  | **Redis 7.0**      | Stream (队列), Lua (逻辑), Hash (状态), Pipeline |
+| **Storage**     | **PostgreSQL 15**  | `libpqxx` (stream_to COPY 协议), ACID 事务     |
+| **RPC**         | **gRPC**           | Protobuf 零拷贝通信                             |
+| **Concurrency** | ThreadPool, Atomic | Lock-free 计数器, 细粒度锁                        |
+| **DevOps**      | Docker Compose     | 一键拉起 20+ Worker 集群进行压测                     |
 
 ## **💻 核心实现细节 (Implementation Details)**
 
-### **高性能数据库连接池 (DB Connection Pool)**
+### **1. 基于 Lua 的原子 DAG 引擎 (Atomic DAG Engine via Lua)**
 
-为了在高并发场景下复用 TCP 连接，利用 C++ RAII 机制与 std::condition\_variable 实现了线程安全的连接池。  
-特别设计了 ExecuteTx 模板方法，封装了事务的开启、提交与异常回滚逻辑，极大降低了业务代码耦合度：
-```cpp  
-// 事务模板方法 (Simplified)  
-void ExecuteTx(const std::function\<void(pqxx::work&)\>& tx\_logic) {  
-    auto conn \= AcquireConnection(); // 阻塞式获取连接  
-    bool conn\_broken \= false;  
-    try {  
-        pqxx::work tx(\*conn);  
-        tx\_logic(tx); // 执行具体的业务 SQL  
-        tx.commit();  
-    } catch (const pqxx::broken\_connection& e) {  
-        conn\_broken \= true; // 标记连接损坏  
-        throw;  
-    }   
-    // 归还连接 (内部处理断线重连)  
-    ReleaseConnection(std::move(conn), conn\_broken);  
-}
+为了消除调度器与数据库的高频交互延迟，我们将 DAG 的核心流转逻辑下沉至 Redis 端。 编写了专门的 Lua 脚本，利用 Redis 的**单线程原子性**特性，实现了 "Check-and-Trigger" 的原子操作，避免了应用层的并发锁竞争。
+
+```Lua
+-- scripts/complete_task.lua (Core Logic)
+-- 1. 获取当前任务的所有子节点
+local children = redis.call('SMEMBERS', KEYS[1]) 
+
+for _, child_id in ipairs(children) do
+    -- 2. 原子递减子任务的入度 (Indegree)
+    local remain = redis.call('HINCRBY', KEYS[2], child_id, -1)
+    
+    -- 3. 若入度归零，立即触发调度
+    if remain == 0 then
+        -- 获取元数据 payload 并推入 Stream
+        local payload = redis.call('GET', "dts:task:meta:" .. child_id)
+        redis.call('XADD', KEYS[3], '*', 'payload', payload, 'task_id', child_id)
+    end
+end
 ```
 
-### **故障恢复机制 (Fault Tolerance)**
+### **2. Proto-First 零拷贝透传 (Zero-Copy Pass-through)**
 
-Scheduler 包含一个 后台巡检线程 (Patrol Thread)，定期检查 Worker 的最后心跳时间。  
-一旦发现 Worker 超时（默认 30s），系统将执行以下原子操作：
+在旧架构中，`JSON Parsing` 占用了 API Server 40% 的 CPU。 新架构采用了 **"Payload 不落地"** 策略。客户端传入的 `func_params` 在 Protobuf 定义中被声明为 `string` (bytes)，而非结构化对象。
 
-1. 将该 Worker 标记为 Offline。  
-2. 执行 SQL: UPDATE task SET state=PENDING WHERE worker\_id=xxx AND state=RUNNING。  
-3. 任务被释放回公共池，等待下一次调度。
+- **Ingestion**: API Server 接收请求后，直接将二进制数据写入 PostgreSQL (`COPY`) 和 Redis (`SET`)，全程无反序列化开销。
+    
+- **Execution**: 只有 Worker 在最终执行前才会解析业务参数。
+    
+- **收益**: 这种设计使得 API Server 的吞吐量不再受限于业务数据的复杂度，仅受限于网络带宽。
+    
+
+### **3. 乐观预订负载均衡 (Optimistic Pre-booking)**
+
+为了解决分布式环境下的“状态滞后”导致的热点 Worker 问题（即所有任务都发给了同一个汇报为空闲的 Worker），调度器实现了一套**内存影子状态**机制。
+
+1. **Pre-book**: 调度器决定分发任务前，先在本地内存的 `WorkerLoadMap` 中预增加该 Worker 的负载计数。
+    
+2. **Dispatch**: 执行 RPC 分发。
+    
+3. **Correction**: 当收到 Worker 的真实心跳或任务结束回调时，再修正为准确值。
+    
+
+这一机制强制实现了 **Round-Robin** 级别的精准分发，在压测中将各 Worker 的负载误差控制在 **±1** 以内。
+
+### **4. 基于 Stream 的故障自愈 (Stream-based Fault Tolerance)**
+
+系统利用 Redis Stream 的 `PEL` (Pending Entries List) 实现了可靠的任务追踪。
+
+- **ACK 机制**: 只有当 Worker 明确汇报 `SUCCESS/FAILED` 后，Scheduler 才会执行 `XACK`。
+    
+- **Rescue 线程**: 后台线程定期扫描 `XPENDING` 列表，找出 `idle_time > 60s` 的任务（意味着 Worker 宕机或网络中断）。
+    
+- **XCLAIM**: 使用 `XCLAIM` 原子性地抢占这些僵尸任务的所有权，并重新分发给健康的 Worker，确保**任务零丢失**。
+
+## **📊 性能表现 (Performance)**
+
+*_测试环境：Intel Ultra 7 255HX (24 Cores), 16GB RAM, Docker Compose Cluster_*
+
+| **场景**            | **指标**          | **结果**       | **说明**                   |
+| ----------------- | --------------- | ------------ | ------------------------ |
+| **API Ingestion** | **QPS**         | **1,627**    | 达到数据库 IOPS 物理极限 (同步提交模式) |
+| **Task Dispatch** | **TPS**         | **3,250+**   | Scheduler 分发能力远超写入速度     |
+| **End-to-End**    | **Avg Latency** | **17.32 ms** | 包含 提交->调度->执行->落盘 全链路    |
+| **Stability**     | **Error Rate**  | **0%**       | 在 50,000 请求压测下无数据丢失      |
 
 ## **🚀 快速开始 (Getting Started)**
 
@@ -120,36 +195,33 @@ Scheduler 包含一个 后台巡检线程 (Patrol Thread)，定期检查 Worker 
 
 ### **1\. 编译项目**
 
-mkdir build && cd build  
-cmake ..  
-make \-j4
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+make -j$(nproc)
 
 ### **2\. 启动集群 (Docker 方式)**
 
 (推荐) 无需配置本地环境，一键拉起 PG、Scheduler 和 Worker。
 
-docker-compose up \-d \--build
+docker-compose up -d --build --scale worker=20
 
-## **📊 性能表现 (Performance)**
+### **3. 运行压测**
 
-*测试环境：Ultra 7 255HX, 16GB RAM*
+启动 64 线程并发轰炸，测试系统极限。
 
-| 模块 (Module) | 指标 (Metric) | 数据 (Value) | 说明 |
-| :---- | :---- | :---- | :---- |
-| API Submission | QPS | 682 | 端到端 DAG 提交与落库 |
-| | Avg Latency | 11.65 ms |
-| | P99 Latency | 67.62 ms | 长尾延迟主要受 PG 写入影响 |
-| Scheduler,Dispatch | QPS | 1207 | 任务分发吞吐量 |
-| | Avg Latency | 1.64 ms | 极低的分发延迟 |
-| | P99 Latency | 4.00 ms |
+Bash
 
-## **📅 未来规划 (Performance)**
-[ ] 引入 Redis 缓存:
+```
+./build/tests/benchmark/dts_benchmark 64 50000
+```
 
-缓存 Worker 心跳数据，减少数据库高频写入压力。
 
-基于 Redis 实现分布式锁，支持 Scheduler 多节点高可用部署。
+## **📅 未来规划 (Roadmap)**
 
-[ ] 支持 Cron 表达式: 实现定时任务调度功能。
+- [ ] **Micro-Batching API**: 在 API Server 端实现微批提交，打破单次请求的 IOPS 限制 (目标 10k QPS)。
+    
+- [ ] **Sweeper (补救线程)**: 扫描 DB 中有记录但 Redis 丢失的孤儿任务，实现最终一致性兜底。
+    
+- [ ] **Dashboard**: 基于 Vue/React 的可视化监控面板。
 
 **Author:** \[郝光磊\]

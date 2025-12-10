@@ -1,9 +1,16 @@
 #pragma once
 
 #include "dag.hpp"
+#include "dts/service/task_service.pb.h"
 #include <pqxx/transaction.hxx>
 
 namespace dts::api_server {
+
+struct DagCommitContext {
+  std::string job_id;
+  std::unordered_map<std::string, std::string> natural_to_uuid;
+  std::vector<std::string> entry_task_ids;
+};
 
 class TaskSubmitter {
  public:
@@ -14,7 +21,11 @@ class TaskSubmitter {
    * @return bool   true 表示成功, false 表示失败
    */
   // **已更新**: 依赖于真实的 pqxx::connection
-  bool handleSubmitDag(dts::SubmitDagRequest& request, pqxx::work& tx);
+  std::optional<DagCommitContext> PersistDagToDB(
+      const dts::service::SubmitDagRequest& proto_req, pqxx::work& tx);
+
+  bool DispatchDagToRedis(const dts::service::SubmitDagRequest& proto_req,
+                          const DagCommitContext& ctx);
 };
 
-}
+}  // namespace dts::api_server

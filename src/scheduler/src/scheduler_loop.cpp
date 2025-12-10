@@ -1,13 +1,16 @@
 #include "scheduler_loop.h"
 #include "logger.hpp"
 #include "redis/RedisKeys.hpp"
+#include "redis/RedisKeys.hpp"
 #include <algorithm>
 #include <chrono>
+#include <sw/redis++/redis++.h>
 
 namespace dts {
 namespace scheduler {
 
 namespace keys = dts::common::redis::keys;
+using dts::common::redis::RedisManager;
 using TaskSerializer = dts::common::utils::TaskSerializer;
 
 SchedulerLoop::SchedulerLoop(std::shared_ptr<TaskRepository> task_repo,
@@ -18,7 +21,7 @@ SchedulerLoop::SchedulerLoop(std::shared_ptr<TaskRepository> task_repo,
   if (!task_repo_ || !worker_manager_) {
     LOG_FATAL << "SchedulerLoop initialized with null dependencies";
   }
-  dispatch_pool_ = std::make_unique<dts::common::ThreadPool>(112);
+  dispatch_pool_ = std::make_unique<dts::common::ThreadPool>(20);
 
   LOG_INFO << "SchedulerLoop initialized with dispatch thread pool size: 112";
   LOG_INFO << "SchedulerLoop initialized.";
@@ -61,76 +64,126 @@ void SchedulerLoop::Stop() {
   LOG_INFO << "SchedulerLoop stopped.";
 }
 
+void AckAndSkip(const std::string& stream_id, const std::string& reason = "") {
+  // 1. 记录日志，说明丢弃原因
+  if (!reason.empty()) {
+    LOG_WARN << "Skipping invalid task (" << reason
+             << "). XACK performed. MsgID: " << stream_id;
+  } else {
+    LOG_WARN << "Skipping invalid task. XACK performed. MsgID: " << stream_id;
+  }
+
+  // 2. 调用 Redis XACK
+  // 注意：XACK 需要传入 Stream Key 和 Group Name
+  // 这里使用你项目中的常量定义
+  dts::common::redis::RedisManager::GetInstance().XAck(
+      dts::common::redis::keys::stream::kTasks,      // Key: dts:stream:tasks
+      dts::common::redis::keys::stream::kGroupMain,  // Group: dts:group:main
+      {stream_id}                                    // ID 列表
+  );
+}
+
 void SchedulerLoop::RunLoop() {
   const int BATCH_SIZE = 20;
-  const int BLOCK_MS = 2000;  // 阻塞 2秒，方便响应 stop_flag
+  const int BLOCK_MS = 2000;
 
-  // 救援计时器 (每 10 秒执行一次救援)
   auto last_rescue_time = std::chrono::steady_clock::now();
 
   while (!stop_flag_) {
     try {
-      // 0. 定期执行救援逻辑
+      // 0. 救援逻辑 (保持不变)
       auto now = std::chrono::steady_clock::now();
       if (now - last_rescue_time > std::chrono::seconds(10)) {
         DoRescue();
         last_rescue_time = now;
       }
 
-      // 1. Filter: 获取可用 Worker
+      // 1. 获取 Worker (快照)
       auto workers = worker_manager_->GetAvailableWorkersSorted();
       if (workers.empty()) {
-        LOG_WARN << "no workers register!";
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        // 优化：没 Worker 时睡久一点，避免疯狂刷日志
+        LOG_WARN << "No workers registered, waiting...";
+        std::this_thread::sleep_for(std::chrono::seconds(1));
         continue;
       }
 
-      // 2. Pull: 阻塞拉取 Redis Stream
+      // 2. Pull: 阻塞拉取 (保持不变)
       auto entries_opt = RedisManager::GetInstance().XReadGroup(
           keys::stream::kGroupMain, consumer_name_, keys::stream::kTasks,
           BATCH_SIZE, BLOCK_MS);
 
-      if (!entries_opt || entries_opt->empty()) {
-        // 超时没任务，继续循环
-        continue;
-      }
+      if (!entries_opt || entries_opt->empty()) continue;
 
       // 3. Match & Dispatch
+      // 【优化点】：用于批次内的负载均衡索引
+      size_t worker_idx = 0;
+
       for (const auto& entry : *entries_opt) {
         if (stop_flag_) break;
 
-        // A. 反序列化
-        auto task_opt = TaskSerializer::FromStreamEntry(entry);
-        if (!task_opt) {
-          LOG_ERROR << "Bad task data in Redis. ACK and skip. MsgID: "
-                    << entry.first;
-          RedisManager::GetInstance().XAck(
-              keys::stream::kTasks, keys::stream::kGroupMain, entry.first);
+        // =========================================================
+        // A. 第一步：解析 Stream 信封 (获取 ID)
+        // =========================================================
+        auto ptr_opt = TaskSerializer::ParseStreamEntry(entry);
+        if (!ptr_opt) {
+          LOG_ERROR << "Invalid Stream Entry. ACK & Skip. ID: " << entry.first;
+          AckAndSkip(entry.first);
           continue;
         }
 
-        dts::Task task = *task_opt;
+        // =========================================================
+        // B. 第二步：去 KV 捞取元数据 (Claim Check)
+        // =========================================================
+        std::string meta_key = keys::dag::TaskMeta(ptr_opt->task_id);
+        auto& redis = RedisManager::GetInstance().GetConnection();
+        auto meta_binary = redis.get(meta_key);
 
-        // 贪心策略：总是取最闲的一个
-        // 由于我们每次循环都会重新 sort，所以 workers[0] 总是当前最闲的
-        WorkerInfo& best_worker = workers[0];
+        if (!meta_binary) {
+          LOG_WARN << "Meta missing for Task: " << ptr_opt->task_id
+                   << " (Expired?). ACK & Skip.";
+          AckAndSkip(entry.first);
+          continue;
+        }
 
+        // =========================================================
+        // C. 第三步：反序列化 Task
+        // =========================================================
+        auto task_opt = TaskSerializer::FromMetaBinary(*meta_binary);
+        if (!task_opt) {
+          LOG_ERROR << "Meta corrupted for Task: " << ptr_opt->task_id;
+          AckAndSkip(entry.first);
+          continue;
+        }
+
+        dts::Task task = std::move(*task_opt);
+        // 把 Stream ID 塞进去，方便后续 ACK
+        task.stream_id = entry.first;
+
+        // =========================================================
+        // D. 调度策略：带负载感知的 Round-Robin
+        // =========================================================
+        // 解释：workers 已经是按负载排序的(从闲到忙)。
+        // 我们在这一批任务中，依次发给 workers[0], workers[1]...
+        // 这样就把 batch 里的任务均匀撒给了最闲的一批机器。
+
+        // 如果机器不够分(任务多于机器)，取模回到 workers[0]
+        WorkerInfo& selected_worker = workers[worker_idx % workers.size()];
+        worker_idx++;
+
+        // 预定资源 (内存中计数，防止下一次 Sort 还没更新)
+        worker_manager_->PrebookTask(selected_worker.worker_id, 1);
+
+        // 设置 Trace
         std::string trace_id = "DISP-" + task.task_id;
         dts::SetRequestId(trace_id);
 
-        dispatch_pool_->enqueue([this, task, best_worker]() {
-          this->DoDispatch(task, best_worker);
-        });
-
-        // 更新内存状态并重排
-        best_worker.running_task_count++;
-
-        // 局部重排 (小优化：其实只需要把 workers[0] 冒泡下去，不必全排)
-        // 但 std::sort 对部分有序数组也很快
-        std::sort(workers.begin(), workers.end(),
-                  [](const WorkerInfo& a, const WorkerInfo& b) {
-                    return a.running_task_count < b.running_task_count;
-                  });
+        // 异步分发
+        // 注意：capture 里的 task 和 worker 建议 move 或 copy
+        // (WorkerInfo 一般很小，Copy 没问题)
+        dispatch_pool_->enqueue(
+            [this, t = std::move(task), w = selected_worker]() {
+              this->DoDispatch(t, w);
+            });
       }
 
     } catch (const std::exception& e) {
@@ -201,58 +254,74 @@ void SchedulerLoop::DoRescue() {
   }
 }
 
-// 处理单条 Stream 消息的通用逻辑
 void SchedulerLoop::ProcessStreamEntry(const RedisManager::StreamEntry& entry) {
-  // 1. 反序列化
-  auto task_opt = TaskSerializer::FromStreamEntry(entry);
-  if (!task_opt) {
-    LOG_ERROR << "Bad task data in Redis (Parse Failed). MsgID: "
-              << entry.first;
-    // 坏数据必须 ACK 掉，否则会永远卡在 Pending List 里被反复 Rescue
-    RedisManager::GetInstance().XAck(keys::stream::kTasks,
-                                     keys::stream::kGroupMain, entry.first);
+  // =========================================================
+  // 1. 解析 ID -> 查 Meta -> 反序列化
+  // =========================================================
+
+  // A. 解析 Stream 信封 (获取 ID)
+  auto ptr_opt = TaskSerializer::ParseStreamEntry(entry);
+  if (!ptr_opt) {
+    // 格式错误，直接丢弃
+    AckAndSkip(entry.first, "Rescue: Invalid Stream Format");
     return;
   }
 
-  dts::Task task = *task_opt;
+  // B. 去 KV 捞取元数据
+  std::string meta_key =
+      dts::common::redis::keys::dag::TaskMeta(ptr_opt->task_id);
 
+  // 注意：这里需要获取连接来调用 get
+  auto& redis = dts::common::redis::RedisManager::GetInstance().GetConnection();
+  auto meta_binary = redis.get(meta_key);
+
+  if (!meta_binary) {
+    AckAndSkip(entry.first,
+               "Rescue: Meta Missing (Key: " + ptr_opt->task_id + ")");
+    return;
+  }
+
+  // C. 反序列化 Payload
+  auto task_opt = TaskSerializer::FromMetaBinary(*meta_binary);
+  if (!task_opt) {
+    AckAndSkip(entry.first, "Rescue: Protobuf Parse Failed");
+    return;
+  }
+
+  dts::Task task = std::move(*task_opt);
+  task.stream_id = entry.first;  // 记得回填 Stream ID
+
+  // =========================================================
   // 2. 获取可用 Worker
+  // =========================================================
   auto workers = worker_manager_->GetAvailableWorkersSorted();
   if (workers.empty()) {
     LOG_WARN << "Rescued task " << task.task_id
-             << " but no workers available. It will pend again.";
-    // 这里不 ACK，让它留在 PEL 里，下次如果还超时再被 Rescue 一次
-    // 或者你可以选择把它放回 Redis (XADD) 并 ACK 旧的，但这会打乱顺序
+             << " but no workers available. Leaving it in Pending List.";
+    // 下一次 Rescue 周期检查时，如果它的 idle time 超过阈值，又会被捞起来重试。
     return;
   }
 
   WorkerInfo& best_worker = workers[0];
 
-  // 3. 异步分发
-  // 增加计数，防止瞬间过载
-  best_worker.running_task_count++;
+  worker_manager_->PrebookTask(best_worker.worker_id, 1);
 
+  // =========================================================
+  // 4. 异步分发
+  // =========================================================
   std::string trace_id = "RESCUE-" + task.task_id;
   dts::SetRequestId(trace_id);
 
-  dispatch_pool_->enqueue(
-      [this, task, best_worker]() { this->DoDispatch(task, best_worker); });
+  LOG_INFO << "Rescuing task: " << task.task_id
+           << " -> Worker: " << best_worker.worker_id;
+
+  dispatch_pool_->enqueue([this, t = std::move(task), w = best_worker]() {
+    this->DoDispatch(t, w);
+  });
 }
 
 void SchedulerLoop::DoDispatch(const dts::Task& task,
                                const WorkerInfo& worker) {
-  // 1. 乐观锁抢占 (DB)
-  bool updated =
-      task_repo_->UpdateTaskToRunning(task.task_id, worker.worker_id);
-  if (!updated) {
-    LOG_DEBUG << "Failed to update DB status for task " << task.task_id
-              << ". Maybe cancelled.";
-    // 既然 DB 不需要跑了，那 Redis 里的这任务也该结了
-    RedisManager::GetInstance().XAck(keys::stream::kTasks,
-                                     keys::stream::kGroupMain, task.stream_id);
-    return;
-  }
-
   // 2. 获取 RPC Stub
   auto stub = GetWorkerStub(worker.address);
   if (!stub) {
@@ -309,22 +378,34 @@ void SchedulerLoop::DoDispatch(const dts::Task& task,
 
 std::shared_ptr<dts::internal::WorkerService::Stub>
 SchedulerLoop::GetWorkerStub(const std::string& address) {
-  std::lock_guard<std::mutex> lock(stub_cache_mtx_);
-
-  auto it = channel_cache_.find(address);
-  if (it == channel_cache_.end()) {
-    // 创建新 Channel
-    // 可以在这里加一些 Channel 参数，比如 KeepAlive
-    grpc::ChannelArguments args;
-    args.SetInt(GRPC_ARG_KEEPALIVE_TIME_MS, 10000);
-    auto channel = grpc::CreateCustomChannel(
-        address, grpc::InsecureChannelCredentials(), args);
-
-    channel_cache_[address] = channel;
-    return dts::internal::WorkerService::NewStub(channel);
+  // 1. 第一次检查（读锁或无锁，视 Map 实现而定，这里假设用 mutex 保护）
+  {
+    std::lock_guard<std::mutex> lock(stub_cache_mtx_);
+    auto it = channel_cache_.find(address);
+    if (it != channel_cache_.end()) {
+      return dts::internal::WorkerService::NewStub(it->second);
+    }
   }
 
-  return dts::internal::WorkerService::NewStub(it->second);
+  // 2. 未找到，准备创建 (不要持有锁！)
+  grpc::ChannelArguments args;
+  args.SetInt(GRPC_ARG_KEEPALIVE_TIME_MS, 10000);
+  // 这个耗时操作现在在锁外进行
+  auto new_channel = grpc::CreateCustomChannel(
+      address, grpc::InsecureChannelCredentials(), args);
+
+  // 3. 再次加锁插入 (防止并发重复创建)
+  {
+    std::lock_guard<std::mutex> lock(stub_cache_mtx_);
+    // 双重检查，也许别的线程刚才已经插进去了
+    auto it = channel_cache_.find(address);
+    if (it != channel_cache_.end()) {
+      return dts::internal::WorkerService::NewStub(it->second);
+    }
+    channel_cache_[address] = new_channel;
+  }
+
+  return dts::internal::WorkerService::NewStub(new_channel);
 }
 
 }  // namespace scheduler

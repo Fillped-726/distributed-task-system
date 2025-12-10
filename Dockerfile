@@ -48,6 +48,7 @@ RUN apt-get update && apt-get install -y \
     libssl3 \
     libboost-system1.83.0 \
     libboost-filesystem1.83.0 \
+    libhiredis-dev \
     ca-certificates \
     netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
@@ -55,10 +56,14 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # [核心修改] 从安装目录拷贝
+COPY --from=builder /app/dist/lib/ /usr/local/lib/
 COPY --from=builder /app/dist/bin/dts_scheduler /app/dts_scheduler
 COPY --from=builder /app/dist/bin/dts_worker /app/dts_worker
 COPY --from=builder /app/dist/bin/dts_api_server /app/dts_api_server
 COPY --from=builder /app/dist/bin/dts_api_web /app/dts_api_web
+
+
+RUN ldconfig
 
 # 创建用户
 RUN useradd -m dts_user

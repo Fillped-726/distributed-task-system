@@ -54,6 +54,8 @@ class WorkerManager {
   // 处理心跳 (返回 false 代表该 Worker 没注册过，需要重新注册)
   bool HandleHeartbeat(const dts::internal::HeartbeatRequest* request);
 
+  void PrebookTask(const std::string& worker_id, int count = 1);
+
   // -----------------------------------------------------
   // 核心调度调用
   // -----------------------------------------------------

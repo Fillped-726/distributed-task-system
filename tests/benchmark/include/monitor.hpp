@@ -3,7 +3,7 @@
 #include "metrics.hpp"
 #include <atomic>
 #include <thread>
-
+namespace dts::test {
 class Monitor {
  public:
   Monitor(const BenchmarkConfig& config, MetricsCollector& metrics,
@@ -20,3 +20,4 @@ class Monitor {
   std::atomic<bool>& stop_submit_flag_;
   std::thread thread_;
 };
+}

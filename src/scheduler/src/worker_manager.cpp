@@ -1,5 +1,5 @@
 #include "worker_manager.h"
-#include "logger.hpp"  // 引入我们优化过的日志库
+#include "logger.hpp"
 #include <algorithm>
 
 namespace dts {
@@ -124,6 +124,14 @@ std::vector<std::string> WorkerManager::PruneDeadWorkers() {
   }
 
   return dead_worker_ids;
+}
+
+void WorkerManager::PrebookTask(const std::string& worker_id, int count) {
+  std::lock_guard<std::mutex> lock(mtx_);  // 必须加锁，因为心跳线程也在写
+  auto it = workers_.find(worker_id);      // 假设你内部用 map 存储
+  if (it != workers_.end()) {
+    it->second->running_task_count += count;
+  }
 }
 
 }  // namespace scheduler

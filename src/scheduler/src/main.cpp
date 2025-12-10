@@ -103,7 +103,7 @@ int main(int argc, char** argv) {
 
     // 3. [关键优化] 数据库连接重试循环
     dts::common::utils::InitWithRetry("Database", [&]() {
-      db_pool = std::make_shared<DatabasePool>(conn_string, 30);
+      db_pool = std::make_shared<DatabasePool>(conn_string, 20);
     });
 
     // 3.5 [新增] Redis 初始化 (带重试)

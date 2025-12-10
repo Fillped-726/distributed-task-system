@@ -4,7 +4,6 @@
 #include <sstream>
 #include <map>
 #include <chrono>
-#include <memory_resource>
 #include <array>
 #include <vector>
 #include <sw/redis++/redis++.h>
@@ -17,7 +16,6 @@
 #include "redis/RedisKeys.hpp"
 #include "utils/TaskSerializer.hpp"
 #include "uuid_generator.hpp"
-#include "converters.hpp"
 #include "dts/task/task.pb.h"
 
 namespace dts::api_server {
@@ -27,206 +25,233 @@ using RedisManager = dts::common::redis::RedisManager;
 using TaskSerializer = dts::common::utils::TaskSerializer;
 namespace keys = dts::common::redis::keys;
 
-bool TaskSubmitter::handleSubmitDag(dts::SubmitDagRequest& request,
-                                    pqxx::work& tx) {
-  LOG_INFO << "Starting DAG submission. ClientID: " << request.client_id;
+std::vector<std::pair<std::string, std::string>> BuildXAddFieldsFromProto(
+    const dts::task::Task& /*client_task*/
+    ,                      // 不需要读它了，参数保留是为了接口兼容或以后扩展
+    const std::string& task_uuid, const std::string& job_id) {
+  std::vector<std::pair<std::string, std::string>> fields;
+  // 只需要 2 个字段，极度轻量
+  fields.reserve(2);
 
-  // 1. 计算依赖计数
-  std::map<std::string, int> dependency_count;
-  for (const auto& edge : request.edges) {
-    dependency_count[edge.child_natural_id]++;
+  // 1. 核心指针：Worker 拿到这个 ID 后，去 KV (Meta) 里查详情
+  fields.emplace_back("id", task_uuid);
+
+  // 2. 上下文：用于日志、隔离或快速判断
+  fields.emplace_back("job", job_id);
+
+  return fields;
+}
+
+std::optional<DagCommitContext> TaskSubmitter::PersistDagToDB(
+    const dts::service::SubmitDagRequest& proto_req, pqxx::work& tx) {
+  DagCommitContext ctx;
+
+  // 1. 生成 Job UUID
+  ctx.job_id = dts::common::generate();
+
+  LOG_INFO << "Persisting DAG to DB. ClientID: " << proto_req.client_id()
+           << ", JobID: " << ctx.job_id;
+
+  // =========================================================
+  // 2. 插入 Job 表 (单条 Insert)
+  // =========================================================
+  // 假设 state 0 = PENDING
+  std::string job_sql =
+      "INSERT INTO public.job (job_id, idempotency_key, state) VALUES (" +
+      tx.quote(ctx.job_id) + ", " + tx.quote(proto_req.idempotency_key()) +
+      ", '0') "
+      "ON CONFLICT (idempotency_key) DO NOTHING RETURNING job_id";
+
+  pqxx::result res = tx.exec(job_sql);
+
+  if (res.empty()) {
+    LOG_WARN << "Duplicate Job (Idempotency check failed): "
+             << proto_req.idempotency_key();
+    return std::nullopt;
   }
 
-  // 2. 插入 Job (幂等性检查)
+  if (proto_req.tasks_size() == 0) return ctx;
+
+  // =========================================================
+  // 3. 计算依赖关系 (直接遍历 Proto edges)
+  // =========================================================
+  std::unordered_map<std::string, int> dependency_count;
+  dependency_count.reserve(proto_req.edges_size());
+
+  for (const auto& edge : proto_req.edges()) {
+    dependency_count[edge.child_natural_id()]++;
+  }
+
+  // =========================================================
+  // 4. 批量插入 Tasks (Stream To)
+  // =========================================================
+  ctx.natural_to_uuid.reserve(proto_req.tasks_size());
+
+  auto task_stream = pqxx::stream_to::table(
+      tx, {"task"},
+      {"task_id", "job_id", "natural_id", "func_name", "func_params",
+       "priority", "state", "pending_dependencies", "max_retry", "retry_count",
+       "timeout_ms", "submit_ts"});
+
+  long long now_ts = std::chrono::duration_cast<std::chrono::milliseconds>(
+                         std::chrono::system_clock::now().time_since_epoch())
+                         .count();
+
+  for (const auto& task : proto_req.tasks()) {
+    // A. 生成 UUID 并注册到 Context
+    std::string uuid = dts::common::generate();
+    ctx.natural_to_uuid[task.natural_id()] = uuid;  // 建立映射
+
+    // B. 计算初始状态
+    int pending = dependency_count[task.natural_id()];
+    int initial_state = (pending == 0) ? 0 : 6;  // 0=PENDING, 6=WAITING
+
+    if (pending == 0) {
+      ctx.entry_task_ids.push_back(uuid);
+    }
+
+    // C. 写入 DB (核心优化点)
+    task_stream.write_values(
+        uuid,                // task_id
+        ctx.job_id,          // job_id
+        task.natural_id(),   // natural_id
+        task.func_name(),    // func_name
+        task.func_params(),  // 直接透传 Proto 里的 string，不做JSON 解析
+
+        task.priority(),    // priority
+        initial_state,      // state
+        pending,            // pending_deps
+        task.max_retry(),   // max_retry
+        0,                  // retry_count (init 0)
+        task.timeout_ms(),  // timeout
+        now_ts              // submit_ts
+    );
+  }
+  task_stream.complete();
+
+  // =========================================================
+  // 5. 批量插入 Edges
+  // =========================================================
+  if (proto_req.edges_size() > 0) {
+    auto edge_stream = pqxx::stream_to::table(
+        tx, {"task_edge"}, {"parent_task_id", "child_task_id"});
+
+    for (const auto& edge : proto_req.edges()) {
+      // 必须确保所有 natural_id 都能找到对应的 UUID
+      // 生产环境建议 catch out_of_range 异常并 log error
+      try {
+        const std::string& p_uuid =
+            ctx.natural_to_uuid.at(edge.parent_natural_id());
+        const std::string& c_uuid =
+            ctx.natural_to_uuid.at(edge.child_natural_id());
+
+        edge_stream.write_values(p_uuid, c_uuid);
+      } catch (const std::out_of_range&) {
+        // 这通常意味着客户端传的 Edge 引用了不存在的 Task
+        // 在这里抛出异常会让事务回滚，符合一致性要求
+        throw std::runtime_error("Edge references unknown task natural_id");
+      }
+    }
+    edge_stream.complete();
+  }
+
+  return ctx;
+}
+
+bool TaskSubmitter::DispatchDagToRedis(
+    const dts::service::SubmitDagRequest& proto_req,
+    const DagCommitContext& ctx) {
+  if (ctx.job_id.empty()) return false;
+
   try {
-    request.job_id = dts::common::generate();
-
-    std::string job_insert_sql =
-        "INSERT INTO public.job (job_id, idempotency_key, state) VALUES (" +
-        tx.quote(request.job_id) + ", " + tx.quote(request.idempotency_key) +
-        ", " +
-        "'0') ON CONFLICT (idempotency_key) DO NOTHING RETURNING job_id;";
-
-    pqxx::result job_res = tx.exec(job_insert_sql);
-
-    if (job_res.empty()) {
-      LOG_WARN << "Idempotency conflict (Duplicate Job): "
-               << request.idempotency_key;
-      return true;
-    }
-
-    // 3. 准备数据 & 插入 DB Task 表
-    if (request.tasks.empty()) return false;
-
-    std::array<std::byte, 64 * 1024> buffer;  // 稍微加大 buffer
-    std::pmr::monotonic_buffer_resource pool{buffer.data(), buffer.size()};
-    std::pmr::map<std::pmr::string, std::pmr::string, std::less<>>
-        natural_to_uuid_map{&pool};
-
-    // 用于收集入口任务 (可以直接执行的任务)
-    std::vector<dts::Task*> entry_tasks;
-
-    std::stringstream task_insert_sql;
-    task_insert_sql << "INSERT INTO public.task "
-                    << "(task_id, job_id, natural_id, func_name, func_params, "
-                    << "priority, state, pending_dependencies, "
-                    << "max_retry, retry_count, timeout_ms, submit_ts) VALUES ";
-
-    for (size_t i = 0; i < request.tasks.size(); ++i) {
-      auto& task = request.tasks[i];
-
-      // 生成并回填 UUID
-      task.task_id = dts::common::generate();
-      task.job_id = request.job_id;
-      natural_to_uuid_map.emplace(task.natural_id, task.task_id);
-
-      int pending_count = dependency_count[task.natural_id];
-      int initial_state =
-          (pending_count == 0) ? 0 : 6;  // 0=PENDING, 6=WAITING_DEPS
-
-      task.state = static_cast<dts::TaskState>(initial_state);
-      task.pending_dependencies = pending_count;
-
-      if (pending_count == 0) {
-        entry_tasks.push_back(&task);
-      }
-
-      // 构建 SQL (略去具体字段拼接，保持你原有的逻辑即可，确保 params dump
-      // 正确)
-      task_insert_sql << "(" << tx.quote(task.task_id) << ", "
-                      << tx.quote(request.job_id) << ", "
-                      << tx.quote(task.natural_id) << ", "
-                      << tx.quote(task.func_name) << ", "
-                      << tx.quote(task.func_params.dump()) << ", "
-                      << task.priority << ", " << initial_state << ", "
-                      << pending_count << ", " << task.max_retry << ", "
-                      << task.retry_count << ", " << task.timeout_ms << ", "
-                      << "EXTRACT(EPOCH FROM NOW())::BIGINT)";
-
-      if (i < request.tasks.size() - 1) task_insert_sql << ", ";
-    }
-    task_insert_sql << ";";
-    tx.exec(task_insert_sql.str());  // Execute Task Insert
-
-    // 4. 插入 DB Edge 表
-    if (!request.edges.empty()) {
-      std::stringstream edge_insert_sql;
-      edge_insert_sql << "INSERT INTO public.task_edge (parent_task_id, "
-                         "child_task_id) VALUES ";
-
-      for (size_t i = 0; i < request.edges.size(); ++i) {
-        const auto& edge = request.edges[i];
-        // 安全检查
-        if (natural_to_uuid_map.find(edge.parent_natural_id.c_str()) ==
-                natural_to_uuid_map.end() ||
-            natural_to_uuid_map.find(edge.child_natural_id.c_str()) ==
-                natural_to_uuid_map.end()) {
-          throw std::runtime_error("Edge references unknown task");
-        }
-
-        const auto& parent_uuid =
-            natural_to_uuid_map.at(edge.parent_natural_id.c_str());
-        const auto& child_uuid =
-            natural_to_uuid_map.at(edge.child_natural_id.c_str());
-
-        edge_insert_sql << "(" << tx.quote(std::string_view(parent_uuid))
-                        << ", " << tx.quote(std::string_view(child_uuid))
-                        << ")";
-
-        if (i < request.edges.size() - 1) edge_insert_sql << ", ";
-      }
-      edge_insert_sql << ";";
-      tx.exec(edge_insert_sql.str());  // Execute Edge Insert
-    }
-
-    // =========================================================================
-    // 5. Redis DAG 初始化 (Pipeline 批量写入) [核心改动]
-    // =========================================================================
-    // 此时 DB 写入无异常，开始构建 Redis 运行时状态
-
     auto& redis_manager = RedisManager::GetInstance();
-    auto& redis_client =
-        redis_manager
-            .GetConnection();  // 获取原始 redis++ client 以使用 pipeline
-    auto pipe = redis_client.pipeline();
+    auto& redis = redis_manager.GetConnection();
+    auto pipe = redis.pipeline();
+    const auto TTL = std::chrono::hours(24);
 
-    // A. 铺设 Meta 数据和依赖计数
-    for (const auto& task : request.tasks) {
-      // 1. 序列化 Task -> Protobuf Binary (供 Lua 搬运)
-      dts::task::Task proto_task;
-      dts::TaskToProto(task, &proto_task);  // 转换
+    // =========================================================
+    // Phase 1: 处理边 (Edges) - 构建拓扑 & 计数
+    // =========================================================
+    std::unordered_map<std::string, int> dependency_map;
+    // 预分配优化
+    dependency_map.reserve(proto_req.tasks_size());
+
+    for (const auto& edge : proto_req.edges()) {
+      // 1. 计数 (内存操作)
+      dependency_map[edge.child_natural_id()]++;
+
+      // 2. Redis SADD (父子关系)
+      const std::string& p_uuid =
+          ctx.natural_to_uuid.at(edge.parent_natural_id());
+      const std::string& c_uuid =
+          ctx.natural_to_uuid.at(edge.child_natural_id());
+
+      std::string children_key = keys::dag::Children(p_uuid);
+      pipe.sadd(children_key, c_uuid);
+      pipe.expire(children_key, TTL);
+    }
+
+    // =========================================================
+    // Phase 2: 处理任务 (Tasks) - Meta, HSET, XADD 一气呵成
+    // =========================================================
+
+    // 用于延长 XADD 参数的生命周期
+    std::vector<std::vector<std::pair<std::string, std::string>>>
+        xadd_args_holder;
+    xadd_args_holder.reserve(ctx.entry_task_ids.size());  // 可选优化
+
+    for (const auto& client_task : proto_req.tasks()) {
+      const std::string& uuid =
+          ctx.natural_to_uuid.at(client_task.natural_id());
+
+      // --- A. Meta 数据 ---
+      dts::task::Task internal_task;
+      internal_task.set_task_id(uuid);
+      internal_task.set_job_id(ctx.job_id);
+      internal_task.set_natural_id(client_task.natural_id());
+      internal_task.set_func_name(client_task.func_name());
+      internal_task.set_func_params(client_task.func_params());  // string copy
+      internal_task.set_priority(client_task.priority());
+      internal_task.set_max_retry(client_task.max_retry());
+      internal_task.set_timeout_ms(client_task.timeout_ms());
+
       std::string binary_payload;
-      if (proto_task.SerializeToString(&binary_payload)) {
-        // SET dts:task:meta:{id} <binary> EX 86400
-        // 设置 24h 过期，防止内存泄漏 (Job 结束后理论上应该手动清理，这里兜底)
-        pipe.set(keys::dag::TaskMeta(task.task_id), binary_payload,
-                 std::chrono::hours(24));
-      }
+      internal_task.SerializeToString(&binary_payload);
+      pipe.set(keys::dag::TaskMeta(uuid), binary_payload, TTL);
 
-      // 2. 如果有依赖，写入 Hash 计数器
-      // HSET dts:dag:deps:{job_id} {task_id} {count}
-      if (task.pending_dependencies > 0) {
-        pipe.hset(keys::dag::DependencyHash(task.job_id), task.task_id,
-                  std::to_string(task.pending_dependencies));
+      // --- B. 依赖处理 (HSET vs XADD) ---
+      // 直接查刚才算好的 map，不存在即为 0
+      int pending = dependency_map[client_task.natural_id()];
 
-        // 给 Hash 也设置个过期时间 (注意：Redis Hash 设置过期是针对 Key
-        // 的，不是 Field) 我们只需要对整个 job 的 Hash 设置一次即可，这里多次
-        // expire 也没关系，开销很小
-        pipe.expire(keys::dag::DependencyHash(task.job_id),
-                    std::chrono::hours(24));
-      }
-    }
+      if (pending > 0) {
+        // 有依赖 -> HSET 等待
+        pipe.hset(keys::dag::DependencyHash(ctx.job_id), uuid,
+                  std::to_string(pending));
+      } else {
+        // 无依赖 -> XADD 触发
+        auto fields = BuildXAddFieldsFromProto(client_task, uuid, ctx.job_id);
+        xadd_args_holder.push_back(std::move(fields));
+        auto& current_fields = xadd_args_holder.back();
 
-    // B. 铺设父子关系 (Edges)
-    for (const auto& edge : request.edges) {
-      const auto& parent_id =
-          natural_to_uuid_map.at(edge.parent_natural_id.c_str());
-      const auto& child_id =
-          natural_to_uuid_map.at(edge.child_natural_id.c_str());
-
-      // SADD dts:dag:children:{parent_id} {child_id}
-      std::string children_key = keys::dag::Children(parent_id);
-      pipe.sadd(children_key, child_id);
-      pipe.expire(children_key, std::chrono::hours(24));
-    }
-
-    // C. 执行 Pipeline
-    try {
-      pipe.exec();
-      // LOG_INFO << "Redis DAG structures initialized.";
-    } catch (const std::exception& e) {
-      LOG_ERROR << "Failed to write DAG to Redis: " << e.what();
-      // 这里是否要回滚？
-      // 策略：返回 false，让 main 回滚 DB。保持强一致性。
-      // 否则 DB 有任务，Redis 没 DAG，Lua 脚本跑不通，任务链会断。
-      return false;
-    }
-
-    // =========================================================================
-    // 6. 触发第一波任务 (Entry Tasks -> Stream)
-    // =========================================================================
-    int pushed_count = 0;
-    for (dts::Task* task_ptr : entry_tasks) {
-      // 生成 XADD 参数
-      auto args_opt = TaskSerializer::ToXAddArgs(*task_ptr);
-      if (args_opt) {
-        // 注意：这里不用 Pipeline，因为 XADD 需要返回 ID
-        // (虽然这里不强制需要，但为了逻辑清晰分开) 也可以放到 Pipeline 里，但
-        // XADD 是独立逻辑
-        redis_manager.XAdd(keys::stream::kTasks, *args_opt);
-        pushed_count++;
+        pipe.xadd(keys::stream::kTasks, "*", current_fields.begin(),
+                  current_fields.end());
       }
     }
 
-    LOG_INFO << "DAG Submitted. JobID: " << request.job_id
-             << ", Tasks: " << request.tasks.size()
-             << ", Edges: " << request.edges.size()
-             << ", Entry Pushed: " << pushed_count;
+    // 给整个 Hash 设置一次过期即可 (优化：不需要在循环里设)
+    if (proto_req.edges_size() > 0) {  // 只有有边的时候才有 Hash
+      pipe.expire(keys::dag::DependencyHash(ctx.job_id), TTL);
+    }
 
-    return true;  // 告知 main 提交事务
+    // =========================================================
+    // Phase 3: 发射
+    // =========================================================
+    auto replies = pipe.exec();
+
+    return true;
 
   } catch (const std::exception& e) {
-    LOG_ERROR << "Submit DAG Exception: " << e.what();
+    LOG_ERROR << "Redis Dispatch Failed: " << e.what();
     return false;
   }
 }
