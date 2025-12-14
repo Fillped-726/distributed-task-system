@@ -15,7 +15,7 @@ template class AsyncCallContext<AsyncTaskService, PbSubmitDagRequest,
 
 /* ---------- AsyncServer 实现 ---------- */
 AsyncServer::AsyncServer(std::shared_ptr<DatabasePool> db_conn)
-    : db_conn_(std::move(db_conn))  // <-- 保存传入的连接
+    : db_conn_(db_conn)  // <-- 保存传入的连接
 {}
 AsyncServer::~AsyncServer() { Shutdown(); }
 
@@ -71,17 +71,15 @@ void AsyncServer::DriveCompletionQueue(grpc::ServerCompletionQueue* cq) {
   while (true) {
     // 被 Shutdown() 唤醒后返回 false
     if (!cq->Next(&tag, &ok)) break;
-    if (tag)
-      static_cast<AsyncCallContext<AsyncTaskService, PbSubmitDagRequest,
-                                   PbSubmitDagResponse>*>(tag)
-          ->Proceed(ok);
+    if (tag) {
+      static_cast<TagProcessor*>(tag)->Proceed(ok);
+    }
   }
   // 排空剩余事件
   while (cq->Next(&tag, &ok)) {
-    if (tag)
-      static_cast<AsyncCallContext<AsyncTaskService, PbSubmitDagRequest,
-                                   PbSubmitDagResponse>*>(tag)
-          ->Proceed(ok);
+    if (tag) {
+      static_cast<TagProcessor*>(tag)->Proceed(ok);
+    }
   }
 }
 

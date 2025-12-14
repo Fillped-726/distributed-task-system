@@ -3,6 +3,7 @@
 #include "dts/task/task.grpc.pb.h"
 #include "dts/service/task_service.pb.h"
 #include "dts/service/task_service.grpc.pb.h"
+#include "coroutines/dts_coroutine.h"
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/create_channel.h>
 #include <grpcpp/client_context.h>
@@ -18,6 +19,8 @@
 #include "async_tags.hpp"
 #include <mutex>
 
+using dts::common::GrpcAwaiter;
+using dts::common::TagProcessor;
 using dts::common::ThreadPool;
 
 namespace dts {
@@ -38,6 +41,7 @@ class GrpcClient {
       const PbSubmitDagRequest& req, DagCallback callback = nullptr);
   std::future<bool> cancel_task_async(const std::string& task_id);
   std::future<Task> query_status_async(const std::string& task_id);
+  GrpcAwaiter<SubmitDagResponse> submit_dag_co(const PbSubmitDagRequest& req);
 
  private:
   std::shared_ptr<grpc::Channel> channel_;

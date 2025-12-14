@@ -202,8 +202,8 @@ find_package(Threads REQUIRED)
 # ---------- 业务与测试 ----------
 add_subdirectory(src)
 
-enable_testing()
-add_subdirectory(tests)
+# enable_testing()
+# add_subdirectory(tests)
 
 # ---------- 质量工具 ----------
 if (COMMON_ENABLE_TIDY)

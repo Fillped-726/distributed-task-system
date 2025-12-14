@@ -6,113 +6,121 @@
 #include <mutex>
 #include "types.hpp"
 #include "exceptions.hpp"
+#include "grpc_base.h"
 
 namespace dts {
+using dts::common::TagProcessor;
 
 // ---------- 异步上下文 ----------
 
-struct IAsyncTag { 
-    virtual ~IAsyncTag() = default;
-    grpc::Status status;
-    virtual void Proceed(bool ok) = 0;
-    virtual void ProceedImpl(bool ok) = 0;
- };
+template <typename Tag>
+struct AsyncTagBase : public TagProcessor {
+  void Proceed(bool ok) override { static_cast<Tag*>(this)->ProceedImpl(ok); }
 
-template<typename Tag>
-struct AsyncTagBase : IAsyncTag {
-    void Proceed(bool ok) override {           
-        static_cast<Tag*>(this)->ProceedImpl(ok);
-    }
-protected:
-    ~AsyncTagBase() = default; 
+ protected:
+  ~AsyncTagBase() = default;
 };
 
 struct AsyncDagSubmitTag : AsyncTagBase<AsyncDagSubmitTag> {
-    
-    explicit AsyncDagSubmitTag(std::shared_ptr<std::promise<SubmitDagResponse>> p,
+  // 构造函数：初始化 Promise 和 Callback
+  explicit AsyncDagSubmitTag(std::shared_ptr<std::promise<SubmitDagResponse>> p,
                              DagCallback cb = {})
-        : promise(std::move(p)), callback(std::move(cb)) {}
+      : promise(std::move(p)), callback(std::move(cb)) {}
 
-    // --- (2) ProceedImpl 逻辑不变，类型已更新 ---
-    // (这个状态机逻辑对于任何一元 RPC 都是通用的，所以内部逻辑不需要大改)
-    void ProceedImpl(bool ok) {
-        switch (step_) {
-        case kLaunch:
-            if (!ok) {
-                status = grpc::Status(grpc::StatusCode::INTERNAL, "StartCall failed");
-                step_ = kFinish; // 直接跳到结束
-            } else {
-                step_ = kFinish;
-            }
-            // 无论 ok 与否都调 Finish，让 gRPC 再回包一次
-            reader->Finish(&response, &status, this); // 'this' 再次作为 tag
-            break;
-
-        case kFinish:
-            if (!ok) {
-                // Finish 本身失败，覆盖 status
-                status = grpc::Status(grpc::StatusCode::INTERNAL, "Finish cq !ok");
-            }
-            SetResult(); // (3) 调用已修改的 SetResult
-            delete this; // 完成，释放内存
-            break;
+  // --- 核心状态机逻辑 ---
+  void ProceedImpl(bool ok) {
+    switch (step_) {
+      case kLaunch:
+        // 阶段 1：RPC 调用刚启动 (如果使用了 PrepareAsync + StartCall)
+        if (!ok) {
+          status = grpc::Status(grpc::StatusCode::INTERNAL,
+                                "Failed to start RPC call");
+          // 如果启动都失败了，直接去处理结果，不需要调 Finish
+          SetResult();
+          delete this;
+          return;
         }
+
+        // 正常启动，进入下一阶段：告诉 gRPC 我们准备好接收结果了
+        // 'this' 再次作为 tag 传入，当 RPC 完成时，CQ 会再次吐出这个 tag
+        step_ = kFinish;
+        reader->Finish(&response, &status, this);
+        break;
+
+      case kFinish:
+        // 阶段 2：RPC 网络传输完成 (无论成功还是超时)
+        if (!ok) {
+          // 这里的 !ok 通常意味着 CQ 正在关闭或者严重的传输层错误
+          status = grpc::Status(grpc::StatusCode::INTERNAL,
+                                "RPC finished with !ok (CQ shutdown?)");
+        }
+
+        // 处理业务逻辑 + 设置 Promise
+        SetResult();
+
+        // --- 自杀 (Self-delete) ---
+        // 这是 gRPC Async 模式的标准做法：Tag 的生命周期随 RPC 结束而结束
+        delete this;
+        break;
     }
+  }
 
-    enum Step { kLaunch, kFinish } step_{kLaunch};
-    
-    // --- (4) 成员类型已修改 ---
-    SubmitDagResponse response; // 响应类型
-    std::unique_ptr<grpc::ClientAsyncResponseReader<SubmitDagResponse>> reader; // Reader 类型
-    grpc::ClientContext context;
-    std::shared_ptr<std::promise<SubmitDagResponse>> promise; // Promise 类型
-    DagCallback callback; // Callback 类型
+  // --- 核心业务逻辑：解析结果 ---
+  void SetResult() {
+    std::call_once(once_, [&] {
+      // 1. 先判断 gRPC 传输层是否成功 (网络通不通，有没有超时)
+      if (status.ok()) {
+        // 2. 传输成功，检查业务层 Header 是否有错误
+        // (根据你的 proto 定义：response.header().error())
+        if (response.has_header() && response.header().has_error()) {
+          const auto& err_obj = response.header().error();
 
-    // --- (5) SetResult 逻辑已修改 ---
-    void SetResult() {
-        std::call_once(once_, [&] {
-            if (status.ok()) {
-                // -------------------------------------------------
-                // *** 关键修改在这里 ***
-                // -------------------------------------------------
-                
-                // 业务 Header 检查
-                if (response.header().has_error()) { // <--- 检查 'error' 字段是否存在
-                    
-                    // 获取 error 对象
-                    const auto& err = response.header().error();
+          // --- 面试考点：错误码映射 (Error Code Mapping) ---
+          // 将业务错误 (Business Error) 转换为标准的 gRPC 状态码
+          // 这样上层调用者可以统一通过 catch(GrpcError) 来处理
+          grpc::StatusCode code = grpc::StatusCode::FAILED_PRECONDITION;
 
-                    // (校招亮点：gRPC 状态码应反映业务错误)
-                    // 我们可以根据 err.sys() 的类型来映射 gRPC 状态码
-                    // 比如 SYS_INVALID_PARAM -> grpc::StatusCode::INVALID_ARGUMENT
-                    //     SYS_IDEMPOTENT    -> grpc::StatusCode::ALREADY_EXISTS
-                    // (为了简单, 我们先用 FAILED_PRECONDITION)
-                    
-                    status = grpc::Status(
-                        grpc::StatusCode::FAILED_PRECONDITION, // (或 UNKNOWN)
-                        "Server rejected: " + err.msg() // <--- 从 'error' 对象获取 msg
-                    );
-                    
-                    promise->set_exception(std::make_exception_ptr(GrpcError(status)));
-                    if (callback) callback(response, status); // 即使失败也返回 response
-                
-                } else {
-                    // *** 成功 ***
-                    // (header.has_error() 为 false, 代表业务成功)
-                    promise->set_value(response);
-                    if (callback) callback(response, status);
-                }
-            
-            } else {
-                // gRPC 失败 (网络层/框架层失败, 逻辑不变)
-                promise->set_exception(std::make_exception_ptr(GrpcError(status)));
-                if (callback) callback(SubmitDagResponse{}, status); // 返回空 response
-            }
-        });
-    }
+          // 示例：可以根据 err_obj.sys() 的值做更细粒度的映射
+          // if (err_obj.sys() == SYS_INVALID_PARAM) code =
+          // grpc::StatusCode::INVALID_ARGUMENT;
 
-private:
-    std::once_flag once_;
+          // 覆盖原本是 OK 的 status，变为错误状态
+          status = grpc::Status(code, "BizError: " + err_obj.msg());
+
+          // 失败路径：设置异常
+          promise->set_exception(std::make_exception_ptr(GrpcError(status)));
+
+          // 回调通知 (即便失败，如果调用方需要 response
+          // 里的某些元数据，也可以传回去)
+          if (callback) callback(response, status);
+
+        } else {
+          // --- 成功路径 ---
+          promise->set_value(response);
+          if (callback) callback(response, status);
+        }
+
+      } else {
+        // 3. gRPC 传输层失败 (Timeout, Unavailable 等)
+        promise->set_exception(std::make_exception_ptr(GrpcError(status)));
+        if (callback) callback(SubmitDagResponse{}, status);
+      }
+    });
+  }
+
+  // --- 成员变量 ---
+  enum Step { kLaunch, kFinish } step_{kLaunch};
+
+  // 上下文与数据
+  grpc::ClientContext context;
+  SubmitDagResponse response;
+  grpc::Status status;
+  std::unique_ptr<grpc::ClientAsyncResponseReader<SubmitDagResponse>> reader;
+
+  // 异步通知机制
+  std::shared_ptr<std::promise<SubmitDagResponse>> promise;
+  DagCallback callback;
+  std::once_flag once_;
 };
 
 // struct AsyncCancelTag  : AsyncTagBase<AsyncCancelTag> {
@@ -123,7 +131,8 @@ private:
 //             reader->Finish(&response, &status, this);
 //             return;
 //         }
-//         if (!ok && step_ == kLaunch) status = grpc::Status(grpc::StatusCode::INTERNAL, "cq !ok");
+//         if (!ok && step_ == kLaunch) status =
+//         grpc::Status(grpc::StatusCode::INTERNAL, "cq !ok");
 //         promise.set_value(status.ok() && response.success());
 //         delete this;
 //     }
@@ -132,8 +141,8 @@ private:
 //     CancelTaskRequest request;
 //     CancelTaskResponse response;
 //     std::promise<bool> promise;
-//     std::unique_ptr<grpc::ClientAsyncResponseReader<CancelTaskResponse>> reader;
-//     grpc::ClientContext context;
+//     std::unique_ptr<grpc::ClientAsyncResponseReader<CancelTaskResponse>>
+//     reader; grpc::ClientContext context;
 // };
 
 // struct AsyncQueryTag   : AsyncTagBase<AsyncQueryTag> {
@@ -144,8 +153,8 @@ private:
 //             reader->Finish(&response, &status, this);
 //             return;
 //         }
-//         if (!ok && step_ == kLaunch) status = grpc::Status(grpc::StatusCode::INTERNAL, "cq !ok");
-//         SetResult();
+//         if (!ok && step_ == kLaunch) status =
+//         grpc::Status(grpc::StatusCode::INTERNAL, "cq !ok"); SetResult();
 //         delete this;
 //     }
 
@@ -153,8 +162,8 @@ private:
 //     QueryTaskRequest request;
 //     QueryTaskResponse response;
 //     std::promise<Task> promise;
-//     std::unique_ptr<grpc::ClientAsyncResponseReader<QueryTaskResponse>> reader;
-//     grpc::ClientContext context;
+//     std::unique_ptr<grpc::ClientAsyncResponseReader<QueryTaskResponse>>
+//     reader; grpc::ClientContext context;
 
 //     void SetResult() {
 //         std::call_once(once_, [&] {
@@ -164,12 +173,13 @@ private:
 //             } else if (response.header().code() != 0) {
 //                 // gRPC 通信成功，但业务逻辑返回错误 (例如 task_id 不存在)
 //                 promise.set_exception(std::make_exception_ptr(
-//                     std::runtime_error("Server Error: " + response.header().msg())
+//                     std::runtime_error("Server Error: " +
+//                     response.header().msg())
 //                 ));
 //             } else {
 //                 // 完全成功
-//                 Task task = TaskFromProto(response.task()); 
-//                 promise.set_value(std::move(task));          
+//                 Task task = TaskFromProto(response.task());
+//                 promise.set_value(std::move(task));
 //             }
 //         });
 //     }
@@ -178,9 +188,9 @@ private:
 //     std::once_flag once_;
 // };
 
-//todo，待完善
-// struct AsyncListenTag : AsyncTagBase<AsyncListenTag> {
-//     enum Step { kStart = 0, kRead, kFinish, kDone };
+// todo，待完善
+//  struct AsyncListenTag : AsyncTagBase<AsyncListenTag> {
+//      enum Step { kStart = 0, kRead, kFinish, kDone };
 
 //     explicit AsyncListenTag(Callback cb)
 //         : callback(std::move(cb)), step_(kStart) {}
@@ -253,4 +263,4 @@ private:
 //     Step step_;
 // };
 
-} // namespace dts
+}  // namespace dts

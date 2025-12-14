@@ -8,14 +8,14 @@
 
 **DTS (Distributed Task Scheduling System)** 是一个高性能的分布式调度平台原型，旨在解决大规模离线任务调度中的复杂依赖管理与高可用问题。
 
-系统采用 **Claim Check (寄存票模式)** 与 **Split-Phase (分阶段提交)** 架构，彻底解耦了任务提交与调度执行。核心调度逻辑下沉至 **Redis Lua** 脚本，实现了原子性的 DAG 依赖驱动。在保证数据最终一致性 (Write-Behind) 的前提下，系统接近 **物理硬件的 IOPS 极限**。
+系统采用 **Claim Check (寄存票模式)** 与 **Split-Phase (分阶段提交)** 架构，彻底解耦了任务提交与调度执行。核心调度逻辑下沉至 **Redis Lua** 脚本，实现了原子性的 DAG 依赖驱动。在保证数据最终一致性 (Write-Behind) 的前提下，系统接近 **物理硬件的 IOPS 极限**。经过多轮架构迭代（从同步 CRUD 到异步 Group Commit），系统单机提交吞吐量已从最初的 500 QPS 优化至 20,000+ QPS。
 
 ## **✨ 核心特性 (Key Features)**
 
-* **极致性能架构**:
-    * **Claim Check Pattern**: Redis Stream 仅传输轻量级 `TaskID` 和 `JobID` 凭证，业务负载 (Payload) 存入 Redis KV，极大提升吞吐量。
-    * **Split-Phase Submission**: 采用 **"Commit-then-Publish"** 策略，先确保 PostgreSQL 落盘，再通过 **Redis Pipeline (1-RTT)** 极速分发，兼顾数据安全与速度。
-    * **Zero-Copy Pass-through**: API 层采用 Protobuf + String 透传策略，避免了昂贵的 JSON 解析与 DOM 构建开销。
+* **🚀 极致性能架构 (High-Performance Architecture)**:
+    * **Async Group Commit (异步组提交)**: 引入 **双缓冲 (Double Buffering)** 队列与 **Fire-and-Forget** 机制，将单次请求 IO 转化为微批顺序 IO。单机提交吞吐量突破 **20,000+ QPS** (提升 14 倍)。
+    * **Claim Check Pattern**: Redis Stream 仅传输轻量级 `TaskID` 凭证，业务负载 (Payload) 存入 Redis KV，极大提升网络带宽利用率。
+    * **Split-Phase Submission**: 采用 **"Commit-then-Publish"** 策略，利用 PostgreSQL **COPY 协议** 实现秒级落盘，配合 Redis Pipeline 极速分发。
 
 * **Redis 驱动的 DAG 引擎**:
     * **Lua 原子调度**: 任务完成后的依赖检查与下游触发完全在 Redis 端原子执行，消除 C++ 端并发竞争，调度延迟 **< 1ms**。
@@ -176,14 +176,18 @@ end
 
 ## **📊 性能表现 (Performance)**
 
-*_测试环境：Intel Ultra 7 255HX (24 Cores), 16GB RAM, Docker Compose Cluster_*
+*测试环境：Intel Ultra 7 255HX (24 Cores), 16GB RAM, Docker Compose Cluster*
 
-| **场景**            | **指标**          | **结果**       | **说明**                   |
-| ----------------- | --------------- | ------------ | ------------------------ |
-| **API Ingestion** | **QPS**         | **1,627**    | 达到数据库 IOPS 物理极限 (同步提交模式) |
-| **Task Dispatch** | **TPS**         | **3,250+**   | Scheduler 分发能力远超写入速度     |
-| **End-to-End**    | **Avg Latency** | **17.32 ms** | 包含 提交->调度->执行->落盘 全链路    |
-| **Stability**     | **Error Rate**  | **0%**       | 在 50,000 请求压测下无数据丢失      |
+我们对系统进行了**控制变量法**压测，分别测试了在不同架构模式下的极限吞吐量：
+
+| 架构模式 | 场景 | QPS / TPS | 平均延迟 | 瓶颈分析 |
+| :--- | :--- | :--- | :--- | :--- |
+| **Async Group Commit**<br>*(当前架构)* | **API Ingestion** | **21,500+** | **~50ms**<br>*(Batch Window)* | **CPU (序列化/UUID)**<br>已彻底突破 IO 瓶颈，性能主要受限于 CPU 计算能力。 |
+| **Sync Commit**<br>*(旧版架构)* | API Ingestion | 1,627 | 9.77ms | **Disk IOPS**<br>受限于 PostgreSQL WAL 同步落盘的物理极限。 |
+| **Scheduler** | Task Dispatch | 4800+ | 1.64ms | 调度能力，性能瓶颈在于DbBatcher的写入 |
+
+
+> **性能总结**: 通过引入异步组提交与双缓冲机制，系统写入吞吐量提升了 **14倍**，成功将性能瓶颈从 **IO 等待** 转移到了 **CPU 计算**，压榨出了硬件的物理极限。
 
 ## **🚀 快速开始 (Getting Started)**
 
@@ -218,10 +222,13 @@ Bash
 
 ## **📅 未来规划 (Roadmap)**
 
-- [ ] **Micro-Batching API**: 在 API Server 端实现微批提交，打破单次请求的 IOPS 限制 (目标 10k QPS)。
-    
-- [ ] **Sweeper (补救线程)**: 扫描 DB 中有记录但 Redis 丢失的孤儿任务，实现最终一致性兜底。
-    
+### **已完成 (Completed)**
+- [x] **Micro-Batching API**: 在 API Server 端实现异步微批提交，突破 IOPS 物理限制，QPS 达到 2w+。
+- [x] **Redis Lua 原子调度**: 下沉调度逻辑，消除应用层锁竞争。
+
+### **待办 (To-Do)**
+- [ ] **Sweeper (补救线程)**: 扫描 DB 中有记录但 Redis 丢失的孤儿任务，保障最终一致性。
+- [ ] **WAL (Write-Ahead Logging)**: 为异步队列增加本地日志文件，防止进程崩溃导致内存数据丢失。
 - [ ] **Dashboard**: 基于 Vue/React 的可视化监控面板。
 
 **Author:** \[郝光磊\]

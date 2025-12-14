@@ -6,7 +6,6 @@
 -- KEYS[2]: dts:dag:deps:{job_id}
 -- KEYS[3]: dts:stream:tasks
 -- KEYS[4]: dts:stream:errors  
--- ARGV[1]: job_id
 -- ARGV[1]: job_id                             (用于拼接 Meta Key)
 -- ============================================================================
 
@@ -34,24 +33,16 @@ for _, child_id in ipairs(children) do
 
         -- A. 获取该子任务的元数据 (Payload)
         -- Key 格式: dts:task:meta:{child_id}
-        local meta_key = "dts:task:meta:" .. child_id
-        local payload = redis.call('GET', meta_key)
+        local meta_exists = redis.call('EXISTS', "dts:task:meta:" .. child_id)
 
-        if payload then
-            -- B. 推入 Stream (XADD)
-            -- 格式: XADD key * payload <binary> task_id <id> job_id <id> priority <p> ...
-            -- 注意：这里为了节省 Lua 参数，我们假设 Payload 里包含了所有 Worker 需要的数据
-            -- 如果需要 priority 等字段，建议在 Meta 里存 JSON 或 Proto，或者在 ARGV 传更多信息
-            -- 这里简单演示推 Payload 和 IDs
-            redis.call('XADD', KEYS[3], '*', 
-                       'payload', payload, 
-                       'task_id', child_id, 
-                       'job_id', ARGV[1])
-            
-            triggered_count = triggered_count + 1
-
-            -- [内存优化] 既然任务已经进队列了，Hash 里的计数器就不需要了
-            redis.call('HDEL', KEYS[2], child_id)
+        if meta_exists == 1 then
+             -- 只推 ID，极度轻量
+             redis.call('XADD', KEYS[3], '*', 
+                        'task_id', child_id, 
+                        'job_id', ARGV[1])
+             
+             triggered_count = triggered_count + 1
+             redis.call('HDEL', KEYS[2], child_id)
         else
             -- 异常逻辑：推入错误 Stream
             -- 结构化存储，方便后续分析

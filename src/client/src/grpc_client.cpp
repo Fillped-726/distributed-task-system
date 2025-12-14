@@ -37,7 +37,7 @@ void GrpcClient::CompleteRpc() {
 
     switch (status) {
       case grpc::CompletionQueue::NextStatus::GOT_EVENT:
-        static_cast<IAsyncTag*>(tag)->Proceed(ok);
+        static_cast<TagProcessor*>(tag)->Proceed(ok);
         break;
       case grpc::CompletionQueue::NextStatus::SHUTDOWN:
         return;
@@ -49,6 +49,19 @@ void GrpcClient::CompleteRpc() {
 
 // ---------- 各 RPC 实现 ----------
 // To do 提交和结果分离
+
+GrpcAwaiter<SubmitDagResponse> GrpcClient::submit_dag_co(
+    const PbSubmitDagRequest& req) {
+  // 这里使用了 C++14 的泛型 lambda 或者是显式类型 lambda
+  // 【注意】req 必须按值捕获 [=] 或者 [req]，因为协程挂起后引用可能失效
+  return GrpcAwaiter<SubmitDagResponse>([this, req](grpc::ClientContext* ctx,
+                                                    SubmitDagResponse* resp,
+                                                    void* tag) {
+    // 使用 PrepareAsync 接口
+    return this->stub_->PrepareAsyncSubmitDag(ctx, req, &this->cq_);
+  });
+}
+
 std::future<SubmitDagResponse> GrpcClient::submit_dag_async(
     const PbSubmitDagRequest& req, DagCallback cb) {
   if (!stub_) {
@@ -124,42 +137,5 @@ SubmitDagResponse GrpcClient::submit_dag_sync(const PbSubmitDagRequest& req) {
   /* 4. (已修改) 返回完整的 Protobuf 响应 */
   return resp;
 }
-
-// std::future<bool> GrpcClient::cancel_task_async(const std::string& task_id) {
-//     auto tag = std::make_unique<AsyncCancelTag>();
-//     tag->request.set_task_id(task_id);
-//     tag->reader = stub_->PrepareAsyncCancelTask(&tag->context,
-//                                                 tag->request, &cq_);
-//     tag->reader->StartCall();
-//     tag->reader->Finish(&tag->response, &tag->status, tag.release());
-//     return tag->promise.get_future();
-// }
-
-// std::future<Task> GrpcClient::query_status_async(const std::string& task_id)
-// {
-//     auto tag = std::make_unique<AsyncQueryTag>();
-//     tag->request.set_task_id(task_id);
-//     tag->reader = stub_->PrepareAsyncQueryTask(&tag->context,
-//                                                  tag->request, &cq_);
-//     tag->reader->StartCall();
-//     tag->reader->Finish(&tag->response, &tag->status, tag.release());
-//     return tag->promise.get_future();
-// }
-
-// bool GrpcClient::cancel_task(const std::string& task_id) {
-//     return cancel_task_async(task_id).get();
-// }
-// Task GrpcClient::query_status(const std::string& task_id) {
-//     return query_status_async(task_id).get();
-// }
-
-// 流式监听--待完善
-// void GrpcClient::listen_results(const std::string& client_id, Callback cb) {
-//     auto tag = std::make_unique<AsyncListenTag>(std::move(cb));
-//     tag->request.set_client_id(client_id);
-//     tag->reader = stub_->PrepareAsyncListenResults(&tag->context,
-//                                                    tag->request, &cq_);
-//     tag->reader->StartCall(tag.release());
-// }
 
 }  // namespace dts

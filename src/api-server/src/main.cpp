@@ -54,7 +54,7 @@ int main(int argc, char* argv[]) {
   });
 
   // ---------------------------------------------------------------------------
-  // 3. [新增] Redis 初始化 (带重试)
+  // 3. Redis 初始化 (带重试)
   // ---------------------------------------------------------------------------
   // 必须在 submitter 创建之前完成，因为 handleSubmitDag 会用到 RedisManager
   dts::common::utils::InitWithRetry("Redis", [&]() {
@@ -65,7 +65,7 @@ int main(int argc, char* argv[]) {
   // ---------------------------------------------------------------------------
   // 4. 服务组件初始化
   // ---------------------------------------------------------------------------
-  auto submitter = std::make_shared<TaskSubmitter>();
+  auto submitter = std::make_shared<TaskSubmitter>(db_pool);
 
   uint16_t port = 45403;
   if (const char* p = std::getenv("DTS_PORT"))
@@ -74,36 +74,28 @@ int main(int argc, char* argv[]) {
   g_server = std::make_unique<AsyncServer>(db_pool);
 
   // 5. 注册 Handler
-  g_server->SetSubmitTaskHandler([submitter](std::shared_ptr<DatabasePool> pool,
+  g_server->SetSubmitTaskHandler([submitter](std::shared_ptr<DatabasePool>,
                                              PbSubmitDagRequest* req_pb,
                                              PbSubmitDagResponse* resp_pb) {
-    // 设置 RequestID
+    // A. 设置 RequestID
     dts::SetRequestId(
         "req-" +
         std::to_string(
             std::chrono::system_clock::now().time_since_epoch().count()));
 
-    // 如果是 Debug 模式，可以打印具体的 JSON
-    // LOG(INFO) << "Handle SubmitTask. JobID: " << req_pb->job_id();
-    std::optional<dts::api_server::DagCommitContext> ctx_opt;
-
     try {
-      // 执行事务
-      pool->ExecuteTx([&](pqxx::work& tx) {
-        ctx_opt = submitter->PersistDagToDB(*req_pb, tx);
-      });
+      // =========================================================
+      // B. 异步提交逻辑 (Async Submit)
+      // =========================================================
 
-      if (ctx_opt) {
-        resp_pb->mutable_header();
-        submitter->DispatchDagToRedis(*req_pb, *ctx_opt);
-        LOG(INFO) << "SubmitTask finished successfully.";
-      } else {
-        auto* err = resp_pb->mutable_header()->mutable_error();
-        err->set_sys(dts::error::SYS_IDEMPOTENT);
-        err->set_msg("Idempotency conflict or DB logic error");
-        LOG(WARNING) << "SubmitTask returned false (Idempotency conflict?).";
-      }
+      // 1. 提交任务到内存队列
+      std::string job_id = submitter->SubmitDagAsync(*req_pb);
+
+      // 记录日志：只记录“接收成功”，不再记录“完成”
+      LOG(INFO) << "Task Accepted. JobID: " << job_id;
+
     } catch (const std::exception& e) {
+      // D. 异常处理 (DB 连接断开、Redis 挂了等)
       LOG(ERROR) << "Handler Exception: " << e.what();
       auto* err = resp_pb->mutable_header()->mutable_error();
       err->set_sys(dts::error::SYS_INTERNAL);

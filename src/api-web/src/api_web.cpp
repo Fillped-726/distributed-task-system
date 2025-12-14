@@ -18,6 +18,7 @@ namespace api {
 
 // 使用 nlohmann::json 的别名
 using json = nlohmann::json;
+using dts::common::CoTask;
 
 // --- 2. 辅助函数 (在 .cpp 文件中保持 static) ---
 
@@ -86,7 +87,8 @@ class ApiServerImpl {
   // --- 核心 HTTP 处理逻辑 ---
   // (你的 dts::api 命名空间内)
 
-  void handle_dag_submit(const httplib::Request& req, httplib::Response& res) {
+  CoTask handle_dag_submit(const httplib::Request& req,
+                           httplib::Response& res) {
     try {
       // 1. 解析 JSON
       json j_body = json::parse(req.body);
@@ -135,8 +137,9 @@ class ApiServerImpl {
 
       // 5. 调用 gRPC (TaskSubmitter 服务)
       // (!!! 假设 pb_resp.job_id() 现在返回 std::string)
+
       dts::service::SubmitDagResponse pb_resp =
-          grpc_client_->submit_dag_sync(pb_req);
+          co_await grpc_client_->submit_dag_co(pb_req);
 
       // 6. (已修正) 格式化并返回成功响应
       json j_resp;

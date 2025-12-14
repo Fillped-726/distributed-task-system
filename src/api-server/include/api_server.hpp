@@ -12,18 +12,20 @@
 #include "dts/task/task.pb.h"
 #include "dts/service/task_service.grpc.pb.h"
 #include "dts/service/task_service.pb.h"
+#include "grpc_base.h"
 
 using PbSubmitDagResponse = dts::service::SubmitDagResponse;
 using dts::service::TaskService;
 using PbSubmitDagRequest = dts::service::SubmitDagRequest;
 using AsyncTaskService = dts::service::TaskService::AsyncService;
+using dts::common::TagProcessor;
 
 // 前向声明
 class AsyncServer;
 
 // 通用异步上下文（一次写成，终身复用）
 template <class Service, class Request, class Response>
-class AsyncCallContext {
+class AsyncCallContext : public TagProcessor {
  public:
   using ProceedFunc = std::function<void(AsyncCallContext*)>;
 
@@ -37,7 +39,7 @@ class AsyncCallContext {
     RequestNext();  // 第一次注册
   }
 
-  void Proceed(bool ok = true) {
+  void Proceed(bool ok = true) override {
     if (!ok) {
       delete this;
       return;
