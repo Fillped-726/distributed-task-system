@@ -2,10 +2,16 @@ syntax = "proto3";
 package dts.service;
 
 import "dts/task/task.proto";
+import "dts/task/task_state.proto";
 import "dts/error/error.proto";
 
+option go_package = "dts-cli/pkg/proto/service";
+
 message CancelTaskRequest  { string task_id = 1; }
-message QueryTaskRequest   { string task_id = 1; }
+message GetJobStatusRequest {
+  string job_id = 1;
+  bool include_tasks = 2; 
+}
 message SubscribeRequest   { string client_id = 1; }
 message SubmitDagRequest {          
   string idempotency_key = 1;  
@@ -31,9 +37,22 @@ message CancelTaskResponse {
   bool success         = 2; // 业务结果
 }
 
-message QueryTaskResponse {
+message GetJobStatusResponse {
   RpcRespHeader header = 1;
-  dts.task.Task task   = 2; // 查询到的任务
+  
+  string job_id = 2;
+  dts.task.JobState state = 3;
+  
+  // 进度条相关
+  int32 total_tasks = 4;
+  int32 finished_tasks = 5;
+  
+  // 详情列表 (仅当 request.include_tasks = true 时填充)
+  repeated dts.task.TaskRuntimeDetail task_details = 6;
+  
+  // 整个 Job 的提交时间和结束时间
+  int64 submit_time = 7;
+  int64 finish_time = 8;
 }
 
 // 流式返回：同样带公共头
@@ -45,7 +64,8 @@ message TaskResult {
 // *************** 服务定义 ***************
 service TaskService {
   rpc SubmitDag(SubmitDagRequest) returns (SubmitDagResponse);
+  rpc GetJobStatus(GetJobStatusRequest) returns (GetJobStatusResponse);
+  //TODO 仅接口
   rpc CancelTask(CancelTaskRequest) returns (CancelTaskResponse);
-  rpc QueryTask(QueryTaskRequest)   returns (QueryTaskResponse);
   rpc ListenResults(SubscribeRequest) returns (stream TaskResult);
 }

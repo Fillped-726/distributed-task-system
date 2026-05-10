@@ -1,6 +1,5 @@
 version: '3.8'
 
-# 定义一个自定义网络，让所有服务都在同一个网段，可以通过服务名互通
 networks:
   dts_net:
     driver: bridge
@@ -19,13 +18,12 @@ services:
       POSTGRES_PASSWORD: password
       POSTGRES_DB: dts_db
     ports:
-      - "5433:5432" # 暴露给宿主机，方便你用 Navicat/pgAdmin 查看数据
+      - "5433:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - dts_net
-    # 健康检查：确保数据库完全启动后，C++ 服务再尝试连接（配合 C++ 中的重试逻辑更稳）
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -37,8 +35,7 @@ services:
     container_name: dts_redis
     ports:
       - "6379:6379"
-    #以此配置开启 AOF 持久化，防止 Redis 意外挂掉时丢失太多数据
-    command: ["redis-server", "--appendonly", "yes"] 
+    command: ["redis-server", "--appendonly", "yes"]
     restart: always
     environment:
       - REDIS_POOL_SIZE=10
@@ -49,21 +46,23 @@ services:
   # 2. Scheduler (调度中心)
   # =========================================
   scheduler:
-    build: .             # 使用当前目录的 Dockerfile 构建
+    build: .
     image: dts-core:latest
     container_name: dts_scheduler
-    command: ["./dts_scheduler"] # 指定运行 Scheduler
+    command: ["./dts_scheduler"]
     restart: always
     environment:
-      - DTS_RUN_MODE=docker          # 开启纯控制台日志
+      - DTS_RUN_MODE=docker
       - DATABASE_URL=postgresql://postgres:password@db:5432/dts_db
       - SCHEDULER_PORT=9090
+      - METRICS_PORT=9100 
       - GLOG_logtostderr=1
       - GLOG_v=0
-      - REDIS_HOST=redis  
+      - REDIS_HOST=redis
       - REDIS_PORT=6379
     ports:
-      - "9090:9090"      # 暴露 gRPC 端口，供外部调试或 API-Web 连接
+      - "9090:9090" # gRPC 端口
+      - "9100:9100" # Metrics 端口，方便本地 curl 调试
     depends_on:
       db:
         condition: service_healthy
@@ -73,15 +72,13 @@ services:
       - dts_net
 
   # =========================================
-  # Worker Cluster (支持 --scale 扩容)
+  # 3. Worker Cluster
   # =========================================
   worker:
     image: dts-core:latest
     restart: always
-
     deploy:
       replicas: 5
-
     depends_on:
       - scheduler
     networks:
@@ -90,28 +87,19 @@ services:
       - DTS_RUN_MODE=docker
       - SCHEDULER_ADDR=scheduler:9090
       - WORKER_BIND_ADDR=0.0.0.0:50051
-      # 注意：WORKER_ADVERTISE_ADDR 这里不写死，由下面的 command 动态注入
+      - METRICS_PORT=9101
     
-    # [核心黑魔法] 使用 Shell 动态获取容器 IP 和 ID
     entrypoint: ["/bin/sh", "-c"]
     command: 
       - |
-        # 1. 获取容器内部 IP (Docker 网络分配的)
         export MY_IP=$$(hostname -i)
-        
-        # 2. 生成唯一 Worker ID (利用容器的主机名，通常是随机 Hash)
         export WORKER_ID="worker-$$(hostname)"
-        
-        # 3. 设置回发给 Scheduler 的地址 (IP:Port)
         export WORKER_ADVERTISE_ADDR="$$MY_IP:50051"
-        
         echo "🚀 Starting $$WORKER_ID at $$WORKER_ADVERTISE_ADDR..."
-        
-        # 4. 启动 C++ 程序 (将动态生成的 ID 传进去)
         ./dts_worker "$$WORKER_ID"
 
   # =========================================
-  # 5. API Server (任务提交入口)
+  # 4. API Server
   # =========================================
   api-server:
     image: dts-core:latest
@@ -122,10 +110,12 @@ services:
       - DTS_RUN_MODE=docker
       - DATABASE_URL=postgresql://postgres:password@db:5432/dts_db
       - DTS_PORT=45403
+      - METRICS_PORT=9102
       - REDIS_HOST=redis   
       - REDIS_PORT=6379
     ports:
-      - "45403:45403" # 暴露给宿主机，方便你用 Postman 测试提交任务
+      - "45403:45403"
+      - "9102:9102" # Metrics 端口
     depends_on:
       db:
         condition: service_healthy
@@ -135,7 +125,7 @@ services:
       - dts_net
 
   # =========================================
-  # 6. API Web (前端 HTTP 接口)
+  # 5. API Web
   # =========================================
   api-web:
     image: dts-core:latest
@@ -144,15 +134,68 @@ services:
     restart: always
     environment:
       - DTS_RUN_MODE=docker
-      - SERVER_ADDR=scheduler:9090 # 连接到 Scheduler
+      - SERVER_ADDR=api-server:45403
       - WEB_PORT=8080
+      - METRICS_PORT=9103
     ports:
-      - "8080:8080" 
+      - "8080:8080"
+      - "9103:9103"
     depends_on:
       - scheduler
     networks:
       - dts_net
 
-# 数据卷持久化
+  # =========================================
+  # [新增] 6. Prometheus (监控数据采集)
+  # =========================================
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    container_name: dts_prometheus
+    restart: always
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--enable-feature=remote-write-receiver'
+    volumes:
+      # 需要在当前目录创建一个 prometheus.yml 文件
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      
+    ports:
+      - "9091:9090" # 宿主机访问 http://localhost:9091
+    networks:
+      - dts_net
+
+  # =========================================
+  # [新增] 7. Grafana (监控可视化)
+  # =========================================
+  grafana:
+    image: grafana/grafana:10.0.0
+    container_name: dts_grafana
+    restart: always
+    ports:
+      - "3000:3000" # 宿主机访问 http://localhost:3000
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin # 初始密码
+    volumes:
+      - grafana_data:/var/lib/grafana # 持久化保存你的仪表盘
+    depends_on:
+      - prometheus
+    networks:
+      - dts_net
+
+  k6:
+    image: grafana/k6
+    volumes:
+      - ./load-test:/scripts
+    environment:
+      - K6_PROMETHEUS_RW_SERVER_URL=http://prometheus:9090/api/v1/write
+    # 默认不启动，需要压测时手动执行
+    entrypoint: /bin/sh
+    stdin_open: true
+    tty: true
+    networks:
+      - dts_net
+
 volumes:
   db_data:
+  grafana_data: # [新增] Grafana 数据卷

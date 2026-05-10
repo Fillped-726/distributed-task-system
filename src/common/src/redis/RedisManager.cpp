@@ -1,10 +1,18 @@
-#include "redis/RedisManager.hpp"
-#include "logger.hpp"
+#include <algorithm>
+#include <iterator>
+#include <vector>
+#include <string>
+#include <optional>
+#include <tuple>
 #include <stdexcept>
 
-#include <sw/redis++/redis++.h>
+// =========================================================================
+// [Layer 3] 项目内部头文件
+// =========================================================================
+#include "redis/RedisManager.hpp"
+#include "logger.hpp"
 
-namespace dts::common::redis {
+namespace dts::common {
 
 RedisManager& RedisManager::GetInstance() noexcept {
   static RedisManager instance;
@@ -85,7 +93,7 @@ bool RedisManager::XGroupCreate(std::string_view key,
   }
 }
 
-std::optional<std::vector<RedisManager::StreamEntry>> RedisManager::XReadGroup(
+std::optional<std::vector<StreamEntry>> RedisManager::XReadGroup(
     std::string_view group, std::string_view consumer, std::string_view key,
     int count, int block_ms) {
   if (!_client) return std::nullopt;
@@ -127,7 +135,7 @@ long long RedisManager::XAck(std::string_view key, std::string_view group,
   }
 }
 
-std::optional<std::vector<RedisManager::StreamEntry>> RedisManager::XClaim(
+std::optional<std::vector<StreamEntry>> RedisManager::XClaim(
     std::string_view key, std::string_view group, std::string_view consumer,
     long long min_idle_ms, const std::vector<std::string>& ids) {
   if (!_client || ids.empty()) return std::nullopt;
@@ -185,6 +193,35 @@ std::optional<std::vector<PendingEntry>> RedisManager::XPending(
   }
 }
 
+std::optional<sw::redis::QueuedReplies> RedisManager::ExecPipeline(
+    PipelineScope scope) {
+  if (!_client) {
+    LOG(ERROR) << "[RedisManager] Client not initialized!";
+    return std::nullopt;
+  }
+
+  try {
+    // 1. 创建 Pipeline 对象
+    auto pipe = _client->pipeline();
+
+    // 2. 执行业务层传入的逻辑 (只管加命令，不管执行)
+    scope(pipe);
+
+    // 3. 真正执行网络 IO
+    auto replies = pipe.exec();
+
+    return replies;
+
+  } catch (const sw::redis::Error& e) {
+    // 4. 统一捕获异常，业务层不需要关心 sw::redis::Error
+    LOG(ERROR) << "[RedisManager] Pipeline execution failed: " << e.what();
+    return std::nullopt;
+  } catch (const std::exception& e) {
+    LOG(ERROR) << "[RedisManager] Pipeline unknown error: " << e.what();
+    return std::nullopt;
+  }
+}
+
 std::string RedisManager::LoadScript(const std::string& script_content) {
   if (!_client) throw std::runtime_error("Redis not initialized");
   if (script_content.empty()) {
@@ -211,8 +248,13 @@ std::optional<long long> RedisManager::EvalSha(
 
   try {
     // 尝试直接使用 SHA1 执行
-    return _client->evalsha<long long>(sha, keys.begin(), keys.end(),
-                                       args.begin(), args.end());
+    auto result = _client->template evalsha<std::optional<long long>>(
+        sha, keys.begin(), keys.end(), args.begin(), args.end());
+    if (result) {
+      return *result;
+    } else {
+      return std::nullopt;
+    }
 
   } catch (const sw::redis::Error& e) {
     std::string err_msg = e.what();
@@ -272,4 +314,4 @@ sw::redis::Redis& RedisManager::GetConnection() {
   return *_client;
 }
 
-}  // namespace dts::common::redis
+}  // namespace dts::common

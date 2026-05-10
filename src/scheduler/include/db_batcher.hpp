@@ -20,6 +20,7 @@ struct TaskUpdateOp {
   dts::task::TaskState state;
   std::string result_json;
   std::string error_msg;
+  std::string worker_id;
 };
 
 class DbBatcher {
@@ -37,7 +38,8 @@ class DbBatcher {
   // [生产端] 添加一条更新记录 (非阻塞，极快)
   void AddStatusUpdate(const std::string& task_id, dts::task::TaskState state,
                        const std::string& result_json = "",
-                       const std::string& error_msg = "");
+                       const std::string& error_msg = "",
+                       const std::string& worker_id = "");
 
  private:
   // [消费端] 后台线程主循环

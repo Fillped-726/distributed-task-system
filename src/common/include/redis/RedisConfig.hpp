@@ -3,7 +3,7 @@
 #include <string>
 #include <cstdlib>
 
-namespace dts::common::redis {
+namespace dts::common {
 
 struct RedisConfig {
   std::string host = "127.0.0.1";
@@ -35,4 +35,4 @@ struct RedisConfig {
   }
 };
 
-}  // namespace dts::common::redis
+}  // namespace dts::common

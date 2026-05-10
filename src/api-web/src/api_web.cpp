@@ -8,10 +8,14 @@
 #include "dag_builder.hpp"
 #include "task.hpp"
 #include "exceptions.hpp"
+#include "dts/service/task_service.pb.h"
+#include "utils/dts_metrics.h"
+#include <prometheus/counter.h>
 
 #include <iostream>
 #include <stdexcept>
 #include <thread>
+#include <future>
 
 namespace dts {
 namespace api {
@@ -56,6 +60,26 @@ static void SetJsonError(httplib::Response& res, const std::string& error_msg,
   res.set_content(j_err.dump(), "application/json");
 }
 
+struct RpcResult {
+  dts::service::SubmitDagResponse response;
+  std::exception_ptr exception = nullptr;
+};
+
+static dts::common::CoTask AsyncSubmitBridge(
+    std::shared_ptr<dts::GrpcClient> client, dts::service::SubmitDagRequest req,
+    std::promise<RpcResult> promise) {
+  RpcResult result;
+  try {
+    // 这里是你封装好的协程调用
+    result.response = co_await client->submit_dag_co(req);
+  } catch (...) {
+    // 捕获所有异常（包括 GrpcError），保存到 result 中
+    result.exception = std::current_exception();
+  }
+  // 通知等待的线程，任务结束
+  promise.set_value(result);
+}
+
 class ApiServerImpl {
  public:
   // --- 成员变量 ---
@@ -63,6 +87,8 @@ class ApiServerImpl {
   httplib::Server svr_;
   std::string host_;
   int port_;
+  prometheus::Counter* http_req_counter_ = nullptr;
+  prometheus::Counter* bench_task_counter_ = nullptr;
 
   // --- 构造函数 (初始化) ---
   ApiServerImpl(std::shared_ptr<dts::GrpcClient> grpc_client,
@@ -71,6 +97,16 @@ class ApiServerImpl {
     if (!grpc_client_) {
       throw std::invalid_argument("ApiServer: GrpcClient 不能为空。");
     }
+    auto registry = dts::Metrics::Instance().GetRegistry();
+
+    // HTTP 请求总数
+    auto& http_family = prometheus::BuildCounter()
+                            .Name("dts_api_web_http_requests_total")
+                            .Help("Total HTTP requests received by api-web")
+                            .Register(*registry);
+    http_req_counter_ = &http_family.Add({{"endpoint", "all"}});
+
+    svr_.new_task_queue = [] { return new httplib::ThreadPool(256); };
 
     // 注册 HTTP 路由和处理程序
     svr_.Post("/api/v1/job/submit",
@@ -87,8 +123,7 @@ class ApiServerImpl {
   // --- 核心 HTTP 处理逻辑 ---
   // (你的 dts::api 命名空间内)
 
-  CoTask handle_dag_submit(const httplib::Request& req,
-                           httplib::Response& res) {
+  void handle_dag_submit(const httplib::Request& req, httplib::Response& res) {
     try {
       // 1. 解析 JSON
       json j_body = json::parse(req.body);
@@ -135,11 +170,21 @@ class ApiServerImpl {
       // (!!! 假设 BuildProto() 现在会正确处理 UUID 和 natural_id)
       dts::service::SubmitDagRequest pb_req = builder.BuildProto();
 
+      std::promise<RpcResult> promise;
+      auto future = promise.get_future();
+
       // 5. 调用 gRPC (TaskSubmitter 服务)
       // (!!! 假设 pb_resp.job_id() 现在返回 std::string)
 
-      dts::service::SubmitDagResponse pb_resp =
-          co_await grpc_client_->submit_dag_co(pb_req);
+      AsyncSubmitBridge(grpc_client_, std::move(pb_req), std::move(promise));
+
+      RpcResult rpc_result = future.get();
+
+      if (rpc_result.exception) {
+        std::rethrow_exception(rpc_result.exception);
+      }
+
+      dts::service::SubmitDagResponse pb_resp = rpc_result.response;
 
       // 6. (已修正) 格式化并返回成功响应
       json j_resp;

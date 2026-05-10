@@ -32,6 +32,7 @@ target_link_libraries(dts_worker_core
         
         # Worker 既是 Server (接收 RunTask) 也是 Client (发送 Heartbeat)
         # 所以需要 gRPC
+        prometheus-cpp::pull
         grpc++
         grpc++_reflection 
 )

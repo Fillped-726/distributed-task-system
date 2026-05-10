@@ -11,45 +11,38 @@
 #include "redis/RedisManager.hpp"
 #include "redis/RedisKeys.hpp"
 #include "utils/TaskSerializer.hpp"
+#include "redis/scripts/complete_task.hpp"
 
-using dts::common::redis::RedisManager;
+using dts::common::RedisManager;
 using dts::common::utils::TaskSerializer;
 
-namespace keys = dts::common::redis::keys;
+namespace keys = dts::common;
 
 namespace {
 
-// 脚本内容 (和我们之前写的一致)
-const std::string kCompleteTaskScript = R"(
-    local children = redis.call('SMEMBERS', KEYS[1])
-    if #children == 0 then return 0 end
-    local triggered = 0
-    for _, child_id in ipairs(children) do
-        local remain = redis.call('HINCRBY', KEYS[2], child_id, -1)
-        if remain == 0 then
-            local meta_key = "dts:task:meta:" .. child_id
-            local payload = redis.call('GET', meta_key)
-            if payload then
-                redis.call('XADD', KEYS[3], '*', 'payload', payload, 'task_id', child_id, 'job_id', ARGV[1])
-                triggered = triggered + 1
-                redis.call('HDEL', KEYS[2], child_id)
-            end
-        elseif remain < 0 then
-            redis.call('XADD', KEYS[4], '*', 'type', 'NEGATIVE_DEPS', 'task_id', child_id)
-        end
-    end
-    redis.call('DEL', KEYS[1])
-    return triggered
-)";
-
-// 缓存 SHA1
 std::string g_complete_task_sha;
 
 void EnsureScriptLoaded() {
+  // 双重检查锁定 (Double-Checked Locking) 的简化版，或者在单线程初始化时调用
   if (g_complete_task_sha.empty()) {
-    g_complete_task_sha =
-        RedisManager::GetInstance().LoadScript(kCompleteTaskScript);
-    LOG_INFO << "Lua script loaded, SHA: " << g_complete_task_sha;
+    try {
+      LOG_INFO << "Loading embedded Lua script to Redis...";
+
+      // 直接传入内存中的字符串 kCompleteTaskScript
+      g_complete_task_sha =
+          RedisManager::GetInstance().LoadScript(keys::kCompleteTaskScript);
+
+      LOG_INFO << "Lua script loaded successfully. SHA: "
+               << g_complete_task_sha;
+
+    } catch (const std::exception& e) {
+      // 这是一个致命错误：如果脚本加载不进 Redis，任务调度无法进行
+      LOG_FATAL << "Critical Error: Failed to load embedded Lua script: "
+                << e.what();
+
+      // 强烈建议这里直接终止进程，而不是让程序带着残缺的状态跑下去
+      throw;
+    }
   }
 }
 
@@ -176,6 +169,9 @@ grpc::Status SchedulerServiceImpl::UpdateTaskStatus(
     };
     std::vector<std::string> args = {job_id};  // ARGV[1]
 
+    // 1. [极速] 执行 Lua 脚本，触发 DAG
+    EnsureScriptLoaded();
+
     // 这一步耗时通常 < 1ms
     auto triggered_opt =
         RedisManager::GetInstance().EvalSha(g_complete_task_sha, keys, args);
@@ -189,13 +185,11 @@ grpc::Status SchedulerServiceImpl::UpdateTaskStatus(
       LOG_ERROR << "Lua execution failed for task " << task_id;
     }
 
-    // 1. [极速] 执行 Lua 脚本，触发 DAG
-    EnsureScriptLoaded();
-
     // 2. [异步] 放入内存队列，等待批量写入 DB
     // 替代了原来的 task_repository_->FinishTaskAndGetReadyChildren
     if (db_batcher_) {
-      db_batcher_->AddStatusUpdate(task_id, state, request->result_json());
+      db_batcher_->AddStatusUpdate(task_id, state, request->result_json(),
+                                   request->error_msg(), request->worker_id());
     } else {
       LOG_ERROR << "DbBatcher is null! Status update might be lost.";
     }

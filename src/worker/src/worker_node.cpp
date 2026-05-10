@@ -88,7 +88,7 @@ void WorkerNode::OnTaskReceived(const dts::Task& task) {
     // 接受的是你的 dts::TaskState
     scheduler_client_->UpdateTaskStatus(
         task.task_id, dts::TaskState::FAILED, task.job_id,
-        "Worker does not have this task function registered");
+        "Worker does not have this task function registered", worker_id_);
     return;
   }
 
@@ -133,21 +133,57 @@ void WorkerNode::OnTaskReceived(const dts::Task& task) {
     LOG_ERROR << "Failed to enqueue task: " << e.what();
     scheduler_client_->UpdateTaskStatus(
         task.task_id, dts::TaskState::FAILED, task.job_id,
-        std::string("Enqueue failed: ") + e.what());
+        std::string("Enqueue failed: ") + e.what(), worker_id_);
   }
 }
 
 void WorkerNode::HeartbeatLoop() {
   dts::SetRequestId("hb-" + worker_id_);
+  LOG_INFO << "Heartbeat loop started.";
 
   while (running_) {
+    // TODO: 后续可以对接真实的 Metrics
     float cpu_usage = 0.5f;
+    // int running_tasks = thread_pool_->active_tasks(); // 如果有这个接口最好
     int running_tasks = 0;
 
-    scheduler_client_->SendHeartbeat(worker_id_, running_tasks, cpu_usage);
+    // ============================================================
+    // [核心修改] 增加返回值检查与重注册逻辑
+    // ============================================================
+
+    // 1. 发送心跳，并获取结果
+    // 注意：请确保 scheduler_client_->SendHeartbeat 在遇到 RPC 错误
+    // 或者 Server 返回 "Worker not found" 时返回 false
+    bool hb_success =
+        scheduler_client_->SendHeartbeat(worker_id_, running_tasks, cpu_usage);
+
+    if (!hb_success) {
+      LOG_WARN << "[Self-Healing] Heartbeat failed! Scheduler may have evicted "
+                  "this worker. "
+               << "Attempting to re-register...";
+
+      // 2. 尝试重新注册
+      // 这里使用启动时保存的 advertise_addr_
+      bool reg_success =
+          scheduler_client_->RegisterWorker(worker_id_, advertise_addr_);
+
+      if (reg_success) {
+        LOG_INFO << "✅ [Self-Healing] Worker re-registered successfully. "
+                    "Connection restored.";
+        // 可选：立即补发一次心跳，或者等下一次循环
+      } else {
+        LOG_ERROR << "❌ [Self-Healing] Re-registration failed. Scheduler "
+                     "might be down or unreachable.";
+        // 此时不要 exit，继续保持循环，直到 Scheduler 恢复
+      }
+    }
+
+    // ============================================================
 
     std::this_thread::sleep_for(std::chrono::seconds(5));
   }
+
+  LOG_INFO << "Heartbeat loop stopped.";
 }
 
 }  // namespace worker

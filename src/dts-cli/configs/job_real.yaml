@@ -1,0 +1,26 @@
+# 对应 JSON 的 client_id
+client_id: "frontend_user_001"
+# 对应 JSON 的 idempotency_key (CLI也可以自动生成，这里先支持手动填)
+idempotency_key: "unique_key_20251125_003"
+
+tasks:
+  - id: "node_1_download"        # -> natural_id
+    cmd: "download_data"         # -> func_name
+    priority: 10                 # -> priority
+    # 这里直接写对象，Go 会自动转成 JSON 字符串给服务端
+    params: 
+      url: "http://example.com/data.csv"
+
+  - id: "node_2_process"
+    cmd: "process_data"
+    priority: 10
+    deps: ["node_1_download"]    # -> 自动转换为 dependencies 列表
+    params:
+      threshold: 0.8
+
+  - id: "node_3_upload"
+    cmd: "upload_results"
+    priority: 10
+    deps: ["node_2_process"]
+    params:
+      dest: "s3://bucket/report.pdf"

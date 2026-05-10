@@ -23,7 +23,8 @@
 
 namespace dts::scheduler {
 
-using RedisManager = dts::common::redis::RedisManager;
+using RedisManager = dts::common::RedisManager;
+using dts::common::StreamEntry;
 
 /**
  * @class SchedulerLoop
@@ -50,7 +51,7 @@ class SchedulerLoop {
   void RunLoop();
 
   // 处理救援回来的单条消息 (Rescue 流程复用)
-  void ProcessStreamEntry(const RedisManager::StreamEntry& entry);
+  void ProcessStreamEntry(const StreamEntry& entry);
 
   // 救援逻辑：处理长时间未 ACK 的消息 (Zombie Tasks)
   void DoRescue();

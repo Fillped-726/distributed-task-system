@@ -60,13 +60,15 @@ bool SchedulerClient::UpdateTaskStatus(const std::string& task_id,
                                        dts::TaskState state,
                                        const std::string& job_id,
                                        const std::string& error_msg,
-                                       const std::string& result_json) {
+                                       const std::string& result_json,
+                                       const std::string& worker_id) {
   dts::internal::UpdateTaskStatusRequest request;
   request.set_task_id(task_id);
   request.set_final_state(static_cast<dts::task::TaskState>(state));
   request.set_error_msg(error_msg);
   request.set_result_json(result_json);
   request.set_job_id(job_id);
+  request.set_worker_id(worker_id);
 
   dts::internal::UpdateTaskStatusResponse response;
   grpc::ClientContext context;
@@ -82,7 +84,8 @@ bool SchedulerClient::UpdateTaskStatus(const std::string& task_id,
 
   LOG_INFO << "Updating task " << task_id << " status to "
            << dts::task::TaskState_Name(
-                  static_cast<dts::task::TaskState>(state));
+                  static_cast<dts::task::TaskState>(state))
+           << " job_id is" << job_id;
 
   grpc::Status status = stub_->UpdateTaskStatus(&context, request, &response);
 

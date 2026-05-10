@@ -34,10 +34,11 @@ void DbBatcher::Stop() {
 void DbBatcher::AddStatusUpdate(const std::string& task_id,
                                 dts::task::TaskState state,
                                 const std::string& result_json,
-                                const std::string& error_msg) {
+                                const std::string& error_msg,
+                                const std::string& worker_id) {
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    queue_.push_back({task_id, state, result_json, error_msg});
+    queue_.push_back({task_id, state, result_json, error_msg, worker_id});
   }
   if (queue_.size() >= kBatchSize) {
     cv_.notify_one();
@@ -91,6 +92,7 @@ void DbBatcher::FlushBatch(std::vector<TaskUpdateOp>& batch) {
          << "state = v.state::int, "
          << "result = v.result::jsonb, "
          << "error_msg = v.error_msg, "
+         << "worker_id = v.worker_id,"
          << "finish_ts = EXTRACT(EPOCH FROM NOW())::BIGINT "
          << "FROM (VALUES ";
 
@@ -98,12 +100,13 @@ void DbBatcher::FlushBatch(std::vector<TaskUpdateOp>& batch) {
         const auto& op = batch[i];
         ss << "(" << tx.quote(op.task_id) << ", " << static_cast<int>(op.state)
            << ", " << tx.quote(op.result_json.empty() ? "{}" : op.result_json)
-           << ", " << tx.quote(op.error_msg) << ")";
+           << ", " << tx.quote(op.error_msg) << ", " << tx.quote(op.worker_id)
+           << ")";
 
         if (i < batch.size() - 1) ss << ", ";
       }
 
-      ss << ") AS v(task_id, state, result, error_msg) "
+      ss << ") AS v(task_id, state, result, error_msg, worker_id) "
          << "WHERE t.task_id = v.task_id::uuid";
 
       tx.exec(ss.str());

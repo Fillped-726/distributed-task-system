@@ -18,13 +18,14 @@
 #include "scheduler_service_impl.h"
 #include "utils/utils.hpp"
 #include "db_batcher.hpp"
+#include "utils/dts_metrics.h"
 
 #include "redis/RedisManager.hpp"
 #include "redis/RedisConfig.hpp"
 
 using dts::common::DatabasePool;
-using dts::common::redis::RedisConfig;
-using dts::common::redis::RedisManager;
+using dts::common::RedisConfig;
+using dts::common::RedisManager;
 using dts::scheduler::SchedulerLoop;
 using dts::scheduler::SchedulerServiceImpl;
 using dts::scheduler::TaskRepository;
@@ -115,7 +116,7 @@ int main(int argc, char** argv) {
 
     // 4. 组件初始化
     LOG_INFO << "Initializing components...";
-    worker_manager = std::make_shared<WorkerManager>(std::chrono::seconds(30));
+    worker_manager = std::make_shared<WorkerManager>(std::chrono::seconds(60));
     task_repo = std::make_shared<TaskRepository>(db_pool);
     db_batcher = std::make_shared<dts::scheduler::DbBatcher>(db_pool);
     db_batcher->Start();
@@ -124,7 +125,11 @@ int main(int argc, char** argv) {
     service_impl = std::make_unique<SchedulerServiceImpl>(
         worker_manager, task_repo, db_batcher);
 
-    // 5. 启动 gRPC (支持环境变量端口)
+    // 5. 启动监控指标 HTTP Server
+
+    dts::Metrics::Instance().Start("9100");
+
+    // 6. 启动 gRPC (支持环境变量端口)
     std::string server_address = "0.0.0.0:9090";
     if (const char* p = std::getenv("SCHEDULER_PORT")) {
       server_address = "0.0.0.0:" + std::string(p);

@@ -1,6 +1,16 @@
 syntax = "proto3";
 package dts.task;
 
+option go_package = "dts-cli/pkg/proto/task";
+
+enum JobState {
+  JOB_UNKNOWN = 0;
+  JOB_PENDING = 1;
+  JOB_RUNNING = 2;
+  JOB_SUCCESS = 3;
+  JOB_FAILED  = 4;
+}
+
 enum TaskState {
   PENDING   = 0;
   RUNNING   = 1;

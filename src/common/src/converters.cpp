@@ -60,6 +60,7 @@ void TaskToProto(const dts::Task& task, PbTask* proto) {
   proto->set_natural_id(task.natural_id);  // (!! 关键 !!) 发送 "task_A"
 
   proto->set_client_id(task.client_id);
+  proto->set_job_id(task.job_id);
   proto->set_priority(task.priority);
   proto->set_state(static_cast<PbTaskState>(task.state));
   proto->set_func_name(task.func_name);
@@ -98,7 +99,7 @@ Task TaskFromProto(const PbTask& proto) {
   task.task_id = proto.task_id();        // (UUID)
   task.natural_id = proto.natural_id();  // ("task_A")
   // ---
-
+  task.job_id = proto.job_id();
   task.client_id = proto.client_id();
   task.priority = proto.priority();
   task.state = static_cast<TaskState>(proto.state());

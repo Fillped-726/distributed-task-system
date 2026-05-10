@@ -24,9 +24,9 @@
 namespace dts::api_server {
 
 // 简化命名空间引用
-using RedisManager = dts::common::redis::RedisManager;
+using RedisManager = dts::common::RedisManager;
 using TaskSerializer = dts::common::utils::TaskSerializer;
-namespace keys = dts::common::redis::keys;
+namespace keys = dts::common;
 
 // =========================================================
 // 匿名命名空间：内部辅助函数
@@ -392,6 +392,7 @@ void TaskSubmitter::AppendDagToPipeline(
 
 std::string TaskSubmitter::SubmitDagAsync(
     const dts::service::SubmitDagRequest& proto_req) {
+  if (rpc_counter) rpc_counter->Increment();
   // 1. 创建批处理单元
   BatchItem item(proto_req);
 
@@ -434,6 +435,19 @@ std::string TaskSubmitter::SubmitDagAsync(
   }
 
   return returned_job_id;
+}
+
+void TaskSubmitter::InitMetrics() {
+  auto registry = dts::Metrics::Instance().GetRegistry();
+
+  // 2. 注册指标（如果还没注册过）
+  auto& family = prometheus::BuildCounter()
+                     .Name("dts_api_server_requests_total")
+                     .Help("Total requests received by api-server")
+                     .Register(*registry);
+
+  // 3. 添加带标签的计数器
+  rpc_counter = &family.Add({{"method", "SubmitTask"}, {"status", "received"}});
 }
 
 }  // namespace dts::api_server

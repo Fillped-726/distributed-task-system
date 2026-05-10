@@ -10,6 +10,8 @@ import "dts/task/task.proto";
 import "dts/service/task_service.proto"; 
 import "dts/task/task_state.proto";
 
+option go_package = "dts-cli/pkg/proto/internal";
+
 //-------------------------------------------------
 // SchedulerService
 // 由 Scheduler 进程实现。
@@ -91,6 +93,8 @@ message UpdateTaskStatusRequest {
     string job_id =5;
 
     int32 retry_count =6;
+
+    string worker_id =7;
 }
 
 message UpdateTaskStatusResponse {

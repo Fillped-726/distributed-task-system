@@ -29,7 +29,8 @@ class SchedulerClient {
   bool UpdateTaskStatus(const std::string& task_id, dts::TaskState state,
                         const std::string& job_id,
                         const std::string& error_msg = "",
-                        const std::string& result_json = "");
+                        const std::string& result_json = "",
+                        const std::string& worker_id = "");
 
  private:
   std::unique_ptr<dts::internal::SchedulerService::Stub> stub_;

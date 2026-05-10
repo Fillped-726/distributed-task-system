@@ -15,8 +15,7 @@
 
 namespace dts::scheduler {
 
-namespace keys = dts::common::redis::keys;
-using dts::common::redis::RedisManager;
+namespace keys = dts::common;
 using TaskSerializer = dts::common::utils::TaskSerializer;
 
 // =========================================================
@@ -34,10 +33,9 @@ void AckAndSkip(const std::string& stream_id, const std::string& reason = "") {
   }
 
   // 2. 调用 Redis XACK 移除消息，避免反复消费
-  dts::common::redis::RedisManager::GetInstance().XAck(
-      dts::common::redis::keys::stream::kTasks,      // Key
-      dts::common::redis::keys::stream::kGroupMain,  // Group
-      {stream_id}                                    // ID List
+  RedisManager::GetInstance().XAck(keys::stream::kTasks,      // Key
+                                   keys::stream::kGroupMain,  // Group
+                                   {stream_id}                // ID List
   );
 }
 
@@ -269,7 +267,7 @@ void SchedulerLoop::DoRescue() {
 }
 
 // 处理 Rescue 抢回来的单个任务
-void SchedulerLoop::ProcessStreamEntry(const RedisManager::StreamEntry& entry) {
+void SchedulerLoop::ProcessStreamEntry(const StreamEntry& entry) {
   // 1. 解析与校验
   auto ptr_opt = TaskSerializer::ParseStreamEntry(entry);
   if (!ptr_opt) {
@@ -278,9 +276,8 @@ void SchedulerLoop::ProcessStreamEntry(const RedisManager::StreamEntry& entry) {
     return;
   }
 
-  std::string meta_key =
-      dts::common::redis::keys::dag::TaskMeta(ptr_opt->task_id);
-  auto& redis = dts::common::redis::RedisManager::GetInstance().GetConnection();
+  std::string meta_key = keys::dag::TaskMeta(ptr_opt->task_id);
+  auto& redis = RedisManager::GetInstance().GetConnection();
   auto meta_binary = redis.get(meta_key);
 
   if (!meta_binary) {

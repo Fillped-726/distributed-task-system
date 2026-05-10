@@ -21,10 +21,18 @@ struct CoTask {
     }  // 结束后不保留状态
     void return_void() {}
     void unhandled_exception() {
-      std::terminate();
+      try {
+        std::rethrow_exception(std::current_exception());
+      } catch (const std::exception& e) {
+        LOG(ERROR) << "Coroutine exception: " << e.what();
+      } catch (...) {
+        LOG(ERROR) << "Unknown coroutine exception";
+      }
     }  // 生产环境建议做更细致的异常处理
   };
 };
+
+using ConfigFunc = std::function<void(grpc::ClientContext*)>;
 
 // 2. 通用 gRPC 协程等待器 (核心魔法)
 // ResponseType: 比如 SubmitDagResponse
@@ -38,7 +46,16 @@ class GrpcAwaiter : public TagProcessor {
       std::function<ReaderPtr(grpc::ClientContext*, ResponseType*, void*)>;
 
   // 构造函数
-  GrpcAwaiter(InitFunc init_func) : init_func_(std::move(init_func)) {}
+  GrpcAwaiter(InitFunc init_func, ConfigFunc config_func = nullptr)
+      : init_func_(std::move(init_func)) {
+    if (config_func) {
+      config_func(&context_);  // 由调用者决定超时、Metadata 等
+    } else {
+      // 默认保底策略
+      context_.set_deadline(std::chrono::system_clock::now() +
+                            std::chrono::seconds(5));
+    }
+  }
 
   // --- Awaitable 接口 ---
 
@@ -48,10 +65,6 @@ class GrpcAwaiter : public TagProcessor {
   // 2. 挂起时执行：在此处发起 gRPC 请求
   void await_suspend(std::coroutine_handle<> h) {
     handle_ = h;  // 保存句柄，以便稍后恢复
-
-    // 设置默认超时 (10秒)
-    context_.set_deadline(std::chrono::system_clock::now() +
-                          std::chrono::seconds(10));
 
     // 调用 Lambda 创建 Reader
     // 【关键】将 'this' (GrpcAwaiter*) 作为 tag 传入
@@ -112,4 +125,4 @@ class GrpcAwaiter : public TagProcessor {
   std::coroutine_handle<> handle_;
 };
 
-}  // namespace dts
+}  // namespace dts::common

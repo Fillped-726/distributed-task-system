@@ -100,6 +100,7 @@ target_link_libraries(dts_common
         Boost::uuid
         redis++::redis++ 
         fmt::fmt
+        prometheus-cpp::pull
 )
 
 # ---- 7. 安装规则 ----

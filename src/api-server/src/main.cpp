@@ -12,15 +12,17 @@
 #include "dts/error/sys_error.pb.h"
 #include "logger.hpp"
 #include "task_submitter.hpp"
+#include "job_query_handler.hpp"
 #include "utils/utils.hpp"
-
+#include "utils/dts_metrics.h"
 #include "redis/RedisManager.hpp"
 #include "redis/RedisConfig.hpp"
 
+using dts::api_server::JobQueryHandler;
 using dts::api_server::TaskSubmitter;
 using dts::common::DatabasePool;
-using dts::common::redis::RedisConfig;
-using dts::common::redis::RedisManager;
+using dts::common::RedisConfig;
+using dts::common::RedisManager;
 
 std::unique_ptr<AsyncServer> g_server;
 static std::atomic<bool> g_shutdown{false};
@@ -30,6 +32,8 @@ static void signal_handler(int sig) {
   g_shutdown = true;
   if (g_server) g_server->Shutdown();
 }
+
+prometheus::Counter* global_rpc_counter = nullptr;
 
 int main(int argc, char* argv[]) {
   // 1. 日志初始化
@@ -63,9 +67,24 @@ int main(int argc, char* argv[]) {
   });
 
   // ---------------------------------------------------------------------------
-  // 4. 服务组件初始化
+  // 4. 启动监控指标 HTTP Server
+  // ---------------------------------------------------------------------------
+
+  dts::Metrics::Instance().Start("9102");
+
+  // ---------------------------------------------------------------------------
+  // 5. 服务组件初始化
   // ---------------------------------------------------------------------------
   auto submitter = std::make_shared<TaskSubmitter>(db_pool);
+  std::cout << "🔧 Registering metrics explicitly..." << std::endl;
+  auto registry = dts::Metrics::Instance().GetRegistry();
+  auto& family = prometheus::BuildCounter()
+                     .Name("dts_api_server_requests_total")
+                     .Help("Total RPC requests")
+                     .Register(*registry);
+
+  // 初始化计数器
+  global_rpc_counter = &family.Add({{"method", "SubmitTask"}});
 
   uint16_t port = 45403;
   if (const char* p = std::getenv("DTS_PORT"))
@@ -83,6 +102,10 @@ int main(int argc, char* argv[]) {
         std::to_string(
             std::chrono::system_clock::now().time_since_epoch().count()));
 
+    if (global_rpc_counter) {
+      global_rpc_counter->Increment();
+    }
+
     try {
       // =========================================================
       // B. 异步提交逻辑 (Async Submit)
@@ -93,6 +116,7 @@ int main(int argc, char* argv[]) {
 
       // 记录日志：只记录“接收成功”，不再记录“完成”
       LOG(INFO) << "Task Accepted. JobID: " << job_id;
+      resp_pb->set_job_id(job_id);
 
     } catch (const std::exception& e) {
       // D. 异常处理 (DB 连接断开、Redis 挂了等)
@@ -101,6 +125,12 @@ int main(int argc, char* argv[]) {
       err->set_sys(dts::error::SYS_INTERNAL);
       err->set_msg(e.what());
     }
+  });
+
+  JobQueryHandler query_handler;
+
+  g_server->SetGetJobStatusHandler([&](auto db, auto req, auto resp) {
+    query_handler.Handle(db, req, resp);
   });
 
   g_server->Run(port);

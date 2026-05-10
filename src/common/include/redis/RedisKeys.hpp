@@ -4,7 +4,7 @@
 #include <string_view>
 #include <format>  // C++20 标准库，若编译器暂不支持可换成 <fmt/core.h>
 
-namespace dts::common::redis::keys {
+namespace dts::common {
 
 // =============================================================================
 // Part 1: Field Names (Redis Hash/Stream 内部字段名)
@@ -83,10 +83,15 @@ inline std::string TaskMeta(std::string_view task_id) {
 namespace state {
 
 // 前缀定义 (内部使用)
+constexpr std::string_view kPrefixTaskRuntime = "dts:task:runtime:";
 constexpr std::string_view kPrefixWorker = "dts:worker:";
-constexpr std::string_view kPrefixTaskMeta = "dts:task:meta:";
+constexpr std::string_view kPrefixJobTasks = "dts:job:tasks:";
 
-/**
+inline std::string TaskRuntime(std::string_view task_id) {
+  return std::format("{}{}", kPrefixTaskRuntime, task_id);
+}
+
+/**f
  * @brief 生成 Worker 心跳 Key (String / Hash)
  * 用于服务发现和健康检查
  * Example: "dts:worker:scheduler-01"
@@ -100,8 +105,8 @@ inline std::string WorkerKey(std::string_view worker_name) {
  * 用于存储任务的实时状态、进度等
  * Example: "dts:task:meta:1001-abc-uuid"
  */
-inline std::string TaskMetaKey(std::string_view task_id) {
-  return std::format("{}{}", kPrefixTaskMeta, task_id);
+inline std::string JobTasks(std::string_view job_id) {
+  return std::format("{}{}", kPrefixJobTasks, job_id);
 }
 }  // namespace state
 
@@ -129,4 +134,4 @@ inline std::string SchedulerLeader() {
 }
 }  // namespace lock
 
-}  // namespace dts::common::redis::keys
+}  // namespace dts::common

@@ -1,27 +1,28 @@
 #pragma once
 
 #include "RedisConfig.hpp"
+
 #include <memory>
 #include <mutex>
+#include <shared_mutex>
 #include <string>
 #include <string_view>
 #include <optional>
 #include <vector>
 #include <unordered_map>
-#include <shared_mutex>
+#include <functional>
+#include <tuple>
+#include <utility>
 
-// 前置声明，隐藏第三方库细节
-namespace sw::redis {
-class Redis;
-}
+#include <sw/redis++/redis++.h>
+
+namespace dts::common {
 
 using StreamEntry =
     std::pair<std::string, std::vector<std::pair<std::string, std::string>>>;
 
 using XPendingDetail =
     std::tuple<std::string, std::string, long long, long long>;
-
-namespace dts::common::redis {
 
 struct PendingEntry {
   std::string id;            // 消息 ID
@@ -73,12 +74,12 @@ class RedisManager {
    * @param block_ms 阻塞毫秒数 (0表示无限阻塞)
    * @return 返回消息列表: vector<pair<MsgID, vector<pair<Field, Value>>>>
    */
-  using StreamEntry =
-      std::pair<std::string, std::vector<std::pair<std::string, std::string>>>;
   std::optional<std::vector<StreamEntry>> XReadGroup(std::string_view group,
                                                      std::string_view consumer,
                                                      std::string_view key,
                                                      int count, int block_ms);
+
+  using PipelineScope = std::function<void(sw::redis::Pipeline&)>;
 
   /**
    * @brief 确认消息已处理 (XACK)
@@ -127,6 +128,14 @@ class RedisManager {
                                    const std::vector<std::string>& keys,
                                    const std::vector<std::string>& args);
 
+  /**
+   * @brief 执行 Pipeline (自动处理异常)
+   * @param scope 在这个回调里添加命令
+   * @return std::optional<QueuedReplies>
+   * 成功返回结果集合；失败返回 nullopt (内部已打印日志)
+   */
+  std::optional<sw::redis::QueuedReplies> ExecPipeline(PipelineScope scope);
+
   // 获取底层 Redis 客户端引用 (用于 Pipeline, Transaction 等高级操作)
   // 注意：调用者需要自行处理 redis-plus-plus 的异常
   [[nodiscard]] sw::redis::Redis& GetConnection();
@@ -144,4 +153,4 @@ class RedisManager {
   std::shared_mutex _script_mutex;  // 读多写少，用读写锁
 };
 
-}  // namespace dts::common::redis
+}  // namespace dts::common

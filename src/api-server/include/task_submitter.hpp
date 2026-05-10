@@ -12,6 +12,8 @@
 // === Third-Party Includes ===
 #include <pqxx/transaction.hxx>
 #include <sw/redis++/redis++.h>
+#include "utils/dts_metrics.h"
+#include <prometheus/counter.h>
 
 // === Project Includes ===
 #include "batch_item.hpp"
@@ -72,6 +74,11 @@ class TaskSubmitter {
   const size_t MIN_BATCH_SIZE = 200;         // 最小批次大小 (防抖)
   const size_t BATCH_TIMEOUT_MS = 200;       // 触发刷盘的时间阈值 (毫秒)
   const size_t MAX_QUEUE_SIZE = 100000;      // 队列最大深度 (防 OOM)
+
+  // 性能监控
+  inline static prometheus::Counter* rpc_counter = nullptr;
+
+  void InitMetrics();
 
   // =========================================================
   // 4. 外部依赖

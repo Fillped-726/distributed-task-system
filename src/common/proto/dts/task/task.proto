@@ -6,9 +6,22 @@ import "dts/common/resource.proto";
 import "dts/common/shard.proto";
 import "dts/task/task_state.proto";
 
+option go_package = "dts-cli/pkg/proto/task";
+
 message TaskEdge {
   string parent_natural_id = 1; 
   string child_natural_id  = 2; 
+}
+
+message TaskRuntimeDetail {
+  string task_id = 1;
+  TaskState state = 2;
+  string worker_id = 3;       // 哪个 Worker 执行的（排查问题很有用）
+  string error_message = 4;   // 如果失败，错误信息
+  int32 retry_count = 5;      // 已重试次数
+  int64 start_time = 6;       // Unix Timestamp (ms)
+  int64 end_time = 7;         // Unix Timestamp (ms)
+  string result_payload = 8;  // (可选) 任务产出的简短结果
 }
 
 message Task {
@@ -36,3 +49,4 @@ message Task {
   google.protobuf.Struct result = 15;
   string error_msg   = 16;
 }
+

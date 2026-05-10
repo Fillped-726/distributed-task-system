@@ -57,8 +57,7 @@ BUILD_DOC:BOOL=OFF
 //Builds the googlemock subproject
 BUILD_GMOCK:BOOL=ON
 
-//Build the library as a shared library instead of static. Has
-// no effect if using header-only.
+//Build libraries as shared ones
 BUILD_SHARED_LIBS:BOOL=OFF
 
 //Build all test cases
@@ -484,6 +483,18 @@ CTEST_SUBMIT_RETRY_COUNT:STRING=3
 //How long to wait between timed-out CTest submissions.
 CTEST_SUBMIT_RETRY_DELAY:STRING=5
 
+//The directory containing a CMake configuration file for CURL.
+CURL_DIR:PATH=CURL_DIR-NOTFOUND
+
+//Path to a file.
+CURL_INCLUDE_DIR:PATH=/usr/include/x86_64-linux-gnu
+
+//Path to a library.
+CURL_LIBRARY_DEBUG:FILEPATH=CURL_LIBRARY_DEBUG-NOTFOUND
+
+//Path to a library.
+CURL_LIBRARY_RELEASE:FILEPATH=/usr/lib/x86_64-linux-gnu/libcurl.so
+
 //Maximum time allowed before CTest will kill the test.
 DART_TESTING_TIMEOUT:STRING=1500
 
@@ -502,14 +513,26 @@ DistributedTaskSystem_SOURCE_DIR:STATIC=/home/sakura/text/distributed-task-syste
 //Should we run all asynchronous API tests
 ENABLE_ASYNC_TESTS:BOOL=OFF
 
-//Enable building hiredis examples
+//Enable gzip compression
+ENABLE_COMPRESSION:BOOL=ON
+
+//Disable prometheus examples
 ENABLE_EXAMPLES:BOOL=OFF
+
+//Build prometheus-cpp pull library
+ENABLE_PULL:BOOL=ON
+
+//Build prometheus-cpp push library
+ENABLE_PUSH:BOOL=ON
 
 //Build hiredis_ssl for SSL support
 ENABLE_SSL:BOOL=OFF
 
 //Should we test SSL connections
 ENABLE_SSL_TESTS:BOOL=OFF
+
+//Build tests
+ENABLE_TESTING:BOOL=OFF
 
 //Path to a library.
 EXECINFO_LIBRARY:FILEPATH=EXECINFO_LIBRARY-NOTFOUND
@@ -560,6 +583,10 @@ FETCHCONTENT_SOURCE_DIR_LIBPQXX:PATH=
 FETCHCONTENT_SOURCE_DIR_NLOHMANN_JSON:PATH=
 
 //When not empty, overrides where to find pre-populated content
+// for prometheus-cpp
+FETCHCONTENT_SOURCE_DIR_PROMETHEUS-CPP:PATH=
+
+//When not empty, overrides where to find pre-populated content
 // for redis-plus-plus
 FETCHCONTENT_SOURCE_DIR_REDIS-PLUS-PLUS:PATH=
 
@@ -589,6 +616,9 @@ FETCHCONTENT_UPDATES_DISCONNECTED_LIBPQXX:BOOL=OFF
 
 //Enables UPDATE_DISCONNECTED behavior just for population of nlohmann_json
 FETCHCONTENT_UPDATES_DISCONNECTED_NLOHMANN_JSON:BOOL=OFF
+
+//Enables UPDATE_DISCONNECTED behavior just for population of prometheus-cpp
+FETCHCONTENT_UPDATES_DISCONNECTED_PROMETHEUS-CPP:BOOL=OFF
 
 //Enables UPDATE_DISCONNECTED behavior just for population of redis-plus-plus
 FETCHCONTENT_UPDATES_DISCONNECTED_REDIS-PLUS-PLUS:BOOL=OFF
@@ -650,6 +680,9 @@ FMT_TEST:BOOL=OFF
 
 //Halt the compilation with an error on compiler warnings.
 FMT_WERROR:BOOL=OFF
+
+//Generate and install pkg-config files
+GENERATE_PKGCONFIG:BOOL=ON
 
 //Path to a program.
 GITCOMMAND:FILEPATH=/usr/bin/git
@@ -778,6 +811,12 @@ OPENSSL_INCLUDE_DIR:PATH=/usr/include
 //Path to a library.
 OPENSSL_SSL_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libssl.so
 
+OVERRIDE_CXX_STANDARD:BOOL=OFF
+
+//Force building with -std=c++11 even if the CXXFLAGS are configured
+// differently
+OVERRIDE_CXX_STANDARD_FLAGS:BOOL=ON
+
 //Arguments to supply to pkg-config
 PKG_CONFIG_ARGN:STRING=
 
@@ -786,6 +825,18 @@ PKG_CONFIG_EXECUTABLE:FILEPATH=/usr/bin/pkg-config
 
 //Print file offsets in traces instead of symbolizing
 PRINT_UNSYMBOLIZED_STACK_TRACES:BOOL=OFF
+
+//Enable ZLIB compression
+PROMETHEUS_CPP_ENABLE_COMPRESSION:BOOL=ON
+
+//Disable examples
+PROMETHEUS_CPP_ENABLE_EXAMPLES:BOOL=OFF
+
+//Enable PushGateway support
+PROMETHEUS_CPP_ENABLE_PUSH:BOOL=ON
+
+//Disable testing to avoid gmock conflict
+PROMETHEUS_CPP_ENABLE_TESTING:BOOL=OFF
 
 //The Set the PostgreSQL_INCLUDE_DIR cmake cache entry to the top-level
 // directory containing the PostgreSQL include directories. E.g
@@ -838,11 +889,20 @@ REDIS_PLUS_PLUS_CXX_STANDARD:STRING=17
 //Build with TLS support
 REDIS_PLUS_PLUS_USE_TLS:BOOL=OFF
 
+//Run include-what-you-use
+RUN_IWYU:BOOL=OFF
+
 //Name of the computer/site where compile is being run
 SITE:STRING=MSI
 
+//Enable SSL support for embedded civetweb source code
+THIRDPARTY_CIVETWEB_WITH_SSL:BOOL=OFF
+
 //use PCRE in tests and benchmarks
 USEPCRE:BOOL=OFF
+
+//Use 3rdParty submodules
+USE_THIRDPARTY_LIBRARIES:BOOL=ON
 
 //Enable support for user-generated message prefixes
 WITH_CUSTOM_PREFIX:BOOL=ON
@@ -870,6 +930,15 @@ WITH_TLS:BOOL=ON
 
 //Enable libunwind support
 WITH_UNWIND:BOOL=OFF
+
+//Path to a file.
+ZLIB_INCLUDE_DIR:PATH=/usr/include
+
+//Path to a library.
+ZLIB_LIBRARY_DEBUG:FILEPATH=ZLIB_LIBRARY_DEBUG-NOTFOUND
+
+//Path to a library.
+ZLIB_LIBRARY_RELEASE:FILEPATH=/usr/lib/x86_64-linux-gnu/libz.so
 
 //Value Computed by CMake
 absl_BINARY_DIR:STATIC=/home/sakura/text/distributed-task-system/build/_deps/grpc-build/third_party/abseil-cpp
@@ -1107,6 +1176,9 @@ absl_time_LIB_DEPENDS:STATIC=general;absl::base;general;absl::civil_time;general
 //Dependencies for the target
 address_sorting_LIB_DEPENDS:STATIC=general;dl;general;m;general;rt;
 
+//The directory containing a CMake configuration file for benchmark.
+benchmark_DIR:PATH=benchmark_DIR-NOTFOUND
+
 benchmark_INSTALL_DOCS:BOOL=OFF
 
 //The directory containing a CMake configuration file for boost_atomic.
@@ -1131,6 +1203,9 @@ c-ares_IS_TOP_LEVEL:STATIC=OFF
 
 //Value Computed by CMake
 c-ares_SOURCE_DIR:STATIC=/home/sakura/text/distributed-task-system/build/_deps/grpc-src/third_party/cares/cares
+
+//The directory containing a CMake configuration file for civetweb-3rdparty.
+civetweb-3rdparty_DIR:PATH=/home/sakura/text/distributed-task-system/build/_deps/prometheus-cpp-src/cmake
 
 //Value Computed by CMake
 dts_api_server_BINARY_DIR:STATIC=/home/sakura/text/distributed-task-system/build/src/api-server
@@ -1285,6 +1360,9 @@ gmock_SOURCE_DIR:STATIC=/home/sakura/text/distributed-task-system/build/_deps/go
 //Build all of Google Mock's own tests.
 gmock_build_tests:BOOL=OFF
 
+//The directory containing a CMake configuration file for googlemock-3rdparty.
+googlemock-3rdparty_DIR:PATH=/home/sakura/text/distributed-task-system/build/_deps/prometheus-cpp-src/cmake
+
 //Value Computed by CMake
 googletest-distribution_BINARY_DIR:STATIC=/home/sakura/text/distributed-task-system/build/_deps/googletest-build
 
@@ -1406,6 +1484,9 @@ nlohmann_json_IS_TOP_LEVEL:STATIC=OFF
 nlohmann_json_SOURCE_DIR:STATIC=/home/sakura/text/distributed-task-system/build/_deps/nlohmann_json-src
 
 //Path to a library.
+pkgcfg_lib_PC_CURL_curl:FILEPATH=/usr/lib/x86_64-linux-gnu/libcurl.so
+
+//Path to a library.
 pkgcfg_lib__OPENSSL_crypto:FILEPATH=/usr/lib/x86_64-linux-gnu/libcrypto.so
 
 //Path to a library.
@@ -1413,6 +1494,15 @@ pkgcfg_lib__OPENSSL_ssl:FILEPATH=/usr/lib/x86_64-linux-gnu/libssl.so
 
 //Dependencies for the target
 pqxx_LIB_DEPENDS:STATIC=general;/usr/lib/x86_64-linux-gnu/libpq.so;
+
+//Value Computed by CMake
+prometheus-cpp_BINARY_DIR:STATIC=/home/sakura/text/distributed-task-system/build/_deps/prometheus-cpp-build
+
+//Value Computed by CMake
+prometheus-cpp_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+prometheus-cpp_SOURCE_DIR:STATIC=/home/sakura/text/distributed-task-system/build/_deps/prometheus-cpp-src
 
 //Provider of absl library
 protobuf_ABSL_PROVIDER:STRING=module
@@ -1806,7 +1896,7 @@ CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_NM
 CMAKE_NM-ADVANCED:INTERNAL=1
 //number of local generators
-CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=57
+CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=62
 //ADVANCED property for variable: CMAKE_OBJCOPY
 CMAKE_OBJCOPY-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_OBJDUMP
@@ -1899,16 +1989,28 @@ CPACK_SOURCE_ZIP-ADVANCED:INTERNAL=1
 CTEST_SUBMIT_RETRY_COUNT-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CTEST_SUBMIT_RETRY_DELAY
 CTEST_SUBMIT_RETRY_DELAY-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: CURL_DIR
+CURL_DIR-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: CURL_INCLUDE_DIR
+CURL_INCLUDE_DIR-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: CURL_LIBRARY_DEBUG
+CURL_LIBRARY_DEBUG-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: CURL_LIBRARY_RELEASE
+CURL_LIBRARY_RELEASE-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: DART_TESTING_TIMEOUT
 DART_TESTING_TIMEOUT-ADVANCED:INTERNAL=1
 //Details about finding Boost
 FIND_PACKAGE_MESSAGE_DETAILS_Boost:INTERNAL=[/usr/lib/x86_64-linux-gnu/cmake/Boost-1.83.0/BoostConfig.cmake][cfound components: system filesystem ][v1.83.0(1.83)]
+//Details about finding CURL
+FIND_PACKAGE_MESSAGE_DETAILS_CURL:INTERNAL=[/usr/lib/x86_64-linux-gnu/libcurl.so][/usr/include/x86_64-linux-gnu][c ][v8.5.0()]
 //Details about finding PkgConfig
 FIND_PACKAGE_MESSAGE_DETAILS_PkgConfig:INTERNAL=[/usr/bin/pkg-config][v1.8.1()]
 //Details about finding PostgreSQL
 FIND_PACKAGE_MESSAGE_DETAILS_PostgreSQL:INTERNAL=[/usr/lib/x86_64-linux-gnu/libpq.so][/usr/include/postgresql][c ][v16.11()]
 //Details about finding Threads
 FIND_PACKAGE_MESSAGE_DETAILS_Threads:INTERNAL=[TRUE][v()]
+//Details about finding ZLIB
+FIND_PACKAGE_MESSAGE_DETAILS_ZLIB:INTERNAL=[/usr/lib/x86_64-linux-gnu/libz.so][/usr/include][c ][v1.3()]
 //ADVANCED property for variable: GITCOMMAND
 GITCOMMAND-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: GIT_EXECUTABLE
@@ -1949,6 +2051,8 @@ HAVE_CXX11_CONSTEXPR:INTERNAL=1
 HAVE_CXX11_NULLPTR_T:INTERNAL=1
 //Test HAVE_CXX11_TLS
 HAVE_CXX11_TLS:INTERNAL=1
+//Test HAVE_CXX_ATOMICS_WITHOUT_LIB
+HAVE_CXX_ATOMICS_WITHOUT_LIB:INTERNAL=1
 //Have library dbghelp
 HAVE_DBGHELP:INTERNAL=
 //Have function dladdr
@@ -2228,6 +2332,41 @@ OPENSSL_CRYPTO_LIBRARY-ADVANCED:INTERNAL=1
 OPENSSL_INCLUDE_DIR-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: OPENSSL_SSL_LIBRARY
 OPENSSL_SSL_LIBRARY-ADVANCED:INTERNAL=1
+PC_CURL_CFLAGS:INTERNAL=-I/usr/include/x86_64-linux-gnu
+PC_CURL_CFLAGS_I:INTERNAL=
+PC_CURL_CFLAGS_OTHER:INTERNAL=
+PC_CURL_FOUND:INTERNAL=1
+PC_CURL_INCLUDEDIR:INTERNAL=/usr/include/x86_64-linux-gnu
+PC_CURL_INCLUDE_DIRS:INTERNAL=/usr/include/x86_64-linux-gnu
+PC_CURL_LDFLAGS:INTERNAL=-L/usr/lib/x86_64-linux-gnu;-lcurl
+PC_CURL_LDFLAGS_OTHER:INTERNAL=
+PC_CURL_LIBDIR:INTERNAL=/usr/lib/x86_64-linux-gnu
+PC_CURL_LIBRARIES:INTERNAL=curl
+PC_CURL_LIBRARY_DIRS:INTERNAL=/usr/lib/x86_64-linux-gnu
+PC_CURL_LIBS:INTERNAL=
+PC_CURL_LIBS_L:INTERNAL=
+PC_CURL_LIBS_OTHER:INTERNAL=
+PC_CURL_LIBS_PATHS:INTERNAL=
+PC_CURL_MODULE_NAME:INTERNAL=libcurl
+PC_CURL_PREFIX:INTERNAL=/usr
+PC_CURL_STATIC_CFLAGS:INTERNAL=-I/usr/include/x86_64-linux-gnu
+PC_CURL_STATIC_CFLAGS_I:INTERNAL=
+PC_CURL_STATIC_CFLAGS_OTHER:INTERNAL=
+PC_CURL_STATIC_INCLUDE_DIRS:INTERNAL=/usr/include/x86_64-linux-gnu
+PC_CURL_STATIC_LDFLAGS:INTERNAL=-L/usr/lib/x86_64-linux-gnu;-lcurl;-lnghttp2;-lidn2;-lrtmp;-lssh;-lssh;-lpsl;-lssl;-lcrypto;-lssl;-lcrypto;-lgssapi_krb5;-llber;-lldap;-llber;-lzstd;-lbrotlidec;-lz
+PC_CURL_STATIC_LDFLAGS_OTHER:INTERNAL=
+PC_CURL_STATIC_LIBDIR:INTERNAL=
+PC_CURL_STATIC_LIBRARIES:INTERNAL=curl;nghttp2;idn2;rtmp;ssh;ssh;psl;ssl;crypto;ssl;crypto;gssapi_krb5;lber;ldap;lber;zstd;brotlidec;z
+PC_CURL_STATIC_LIBRARY_DIRS:INTERNAL=/usr/lib/x86_64-linux-gnu
+PC_CURL_STATIC_LIBS:INTERNAL=
+PC_CURL_STATIC_LIBS_L:INTERNAL=
+PC_CURL_STATIC_LIBS_OTHER:INTERNAL=
+PC_CURL_STATIC_LIBS_PATHS:INTERNAL=
+PC_CURL_VERSION:INTERNAL=8.5.0
+PC_CURL_libcurl_INCLUDEDIR:INTERNAL=
+PC_CURL_libcurl_LIBDIR:INTERNAL=
+PC_CURL_libcurl_PREFIX:INTERNAL=
+PC_CURL_libcurl_VERSION:INTERNAL=
 //ADVANCED property for variable: PKG_CONFIG_ARGN
 PKG_CONFIG_ARGN-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: PKG_CONFIG_EXECUTABLE
@@ -2313,6 +2452,12 @@ SYSTEMD_libsystemd_INCLUDEDIR:INTERNAL=
 SYSTEMD_libsystemd_LIBDIR:INTERNAL=
 SYSTEMD_libsystemd_PREFIX:INTERNAL=
 SYSTEMD_libsystemd_VERSION:INTERNAL=
+//ADVANCED property for variable: ZLIB_INCLUDE_DIR
+ZLIB_INCLUDE_DIR-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: ZLIB_LIBRARY_DEBUG
+ZLIB_LIBRARY_DEBUG-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: ZLIB_LIBRARY_RELEASE
+ZLIB_LIBRARY_RELEASE-ADVANCED:INTERNAL=1
 //Have include unistd.h
 Z_HAVE_UNISTD_H:INTERNAL=1
 //Have function clock_gettime
@@ -2362,10 +2507,12 @@ _OPENSSL_openssl_INCLUDEDIR:INTERNAL=
 _OPENSSL_openssl_LIBDIR:INTERNAL=
 _OPENSSL_openssl_PREFIX:INTERNAL=
 _OPENSSL_openssl_VERSION:INTERNAL=
+__pkg_config_arguments_PC_CURL:INTERNAL=QUIET;libcurl
 __pkg_config_arguments__OPENSSL:INTERNAL=QUIET;openssl
 __pkg_config_checked_Brotli_common:INTERNAL=1
 __pkg_config_checked_Brotli_decoder:INTERNAL=1
 __pkg_config_checked_Brotli_encoder:INTERNAL=1
+__pkg_config_checked_PC_CURL:INTERNAL=1
 __pkg_config_checked_SYSTEMD:INTERNAL=1
 __pkg_config_checked__OPENSSL:INTERNAL=1
 //ADVANCED property for variable: boost_atomic_DIR
@@ -2403,11 +2550,13 @@ gtest_force_shared_crt-ADVANCED:INTERNAL=1
 gtest_hide_internal_symbols-ADVANCED:INTERNAL=1
 //Result of TRY_COMPILE
 no_need_fslib:INTERNAL=TRUE
+//ADVANCED property for variable: pkgcfg_lib_PC_CURL_curl
+pkgcfg_lib_PC_CURL_curl-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: pkgcfg_lib__OPENSSL_crypto
 pkgcfg_lib__OPENSSL_crypto-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: pkgcfg_lib__OPENSSL_ssl
 pkgcfg_lib__OPENSSL_ssl-ADVANCED:INTERNAL=1
-prefix_result:INTERNAL=/usr/lib/x86_64-linux-gnu
+prefix_result:INTERNAL=AsynchDNS;GSS-API;HSTS;HTTP2;HTTPS-proxy;IDN;IPv6;Kerberos;Largefile;NTLM;PSL;SPNEGO;SSL;TLS-SRP;UnixSockets;alt-svc;brotli;libz;threadsafe;zstd
 //STRINGS property for variable: protobuf_ABSL_PROVIDER
 protobuf_ABSL_PROVIDER-STRINGS:INTERNAL=module;package
 //ADVANCED property for variable: protobuf_DEBUG_POSTFIX

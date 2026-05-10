@@ -1,7 +1,8 @@
 #include "worker_node.h"
 #include "task_registry.h"
 #include "logger.hpp"
-#include "uuid_generator.hpp"  // 你的公共组件
+#include "uuid_generator.hpp"
+#include "utils/dts_metrics.h"
 
 #include <iostream>
 #include <thread>
@@ -27,6 +28,8 @@ int main(int argc, char** argv) {
       base_id + "-" + dts::common::generate();  // 使用 uuid_generator
 
   dts::SetRequestId("startup-" + worker_id);
+
+  dts::Metrics::Instance().Start("9101");
 
   // 3. 配置加载
   // 监听地址: 默认为 0.0.0.0 以便容器外可访问 (虽然 Worker 主要是 Client

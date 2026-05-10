@@ -8,6 +8,7 @@ project(dts_api_server LANGUAGES CXX)
 add_library(dts_api_server_core STATIC
     src/api_server.cpp
     src/task_submitter.cpp
+    src/job_query_handler.cpp
 )
 
 # 使用 C++20 (继承自根目录设置，这里再次强调也可以)

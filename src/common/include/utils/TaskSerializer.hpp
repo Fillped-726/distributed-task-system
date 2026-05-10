@@ -21,7 +21,7 @@ struct StreamTaskPointer {
 
 class TaskSerializer {
  public:
-  using StreamEntry = dts::common::redis::RedisManager::StreamEntry;
+  using StreamEntry = dts::common::StreamEntry;
 
   // ----------------------------------------------------------------
   // [写入时] 仅生成轻量级指针 (ID + JobID)

@@ -1,6 +1,7 @@
 #include "api_web.hpp"
 #include "grpc_client.hpp"
 #include "logger.hpp"
+#include "utils/dts_metrics.h"
 
 #include <signal.h>
 #include <cstdlib>
@@ -25,6 +26,8 @@ int main(int argc, char** argv) {
   // 注册信号
   signal(SIGINT, SignalHandler);
   signal(SIGTERM, SignalHandler);
+
+  dts::Metrics::Instance().Start("9102");
 
   try {
     // 2. 初始化 gRPC 客户端 (连接到 DTS Scheduler)

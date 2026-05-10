@@ -30,7 +30,7 @@ target_link_libraries(dts_scheduler_core
         libpqxx::pqxx       # 数据库驱动 (Scheduler 必须读写 DB)
         nlohmann_json::nlohmann_json
         
-
+        prometheus-cpp::pull
         grpc++
 )
 

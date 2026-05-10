@@ -1,0 +1,20 @@
+global:
+  scrape_interval: 5s # 抓取频率，演示用5秒，生产环境通常15s-1m
+
+scrape_configs:
+  # 1. 抓取 Scheduler 的指标
+  - job_name: 'dts_scheduler'
+    static_configs:
+      - targets: ['scheduler:9100'] # 对应 compose 服务名和 METRICS_PORT
+
+  # 2. 抓取 API Server 的指标
+  - job_name: 'dts_api_server'
+    static_configs:
+      - targets: ['api-server:9102']
+
+  # 3. 抓取 Worker 的指标
+  # 注意：在 Docker Compose 默认网络下，直接写 'worker:9101' 
+  # 通常会轮询抓取其中一个副本。对于面试演示足够了。
+  - job_name: 'dts_worker'
+    static_configs:
+      - targets: ['worker:9101']

@@ -1,6 +1,8 @@
 syntax = "proto3";
 package dts.error;
 
+option go_package = "dts-cli/pkg/proto/error";
+
 enum SysErr {
   SYS_ERR_UNSPECIFIED = 0;
   SYS_INVALID_PARAM = 1;

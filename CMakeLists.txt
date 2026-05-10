@@ -196,8 +196,28 @@ if(NOT TARGET Boost::uuid)
     )
 endif()
 
-# 线程支持
+# ---------- 6. 性能监测 ----------
+unset(CMAKE_DISABLE_FIND_PACKAGE_ZLIB)
+find_package(ZLIB REQUIRED)
+find_package(CURL REQUIRED)
 find_package(Threads REQUIRED)
+FetchContent_Declare(
+    prometheus-cpp
+    GIT_REPOSITORY https://github.com/jupp0r/prometheus-cpp.git
+    GIT_TAG        v1.3.0  
+)
+set(ENABLE_TESTING OFF CACHE BOOL "Disable prometheus testing" FORCE)
+set(ENABLE_EXAMPLES OFF CACHE BOOL "Disable prometheus examples" FORCE)
+
+# 开启你需要的功能
+set(ENABLE_PUSH ON CACHE BOOL "Enable PushGateway" FORCE)
+set(ENABLE_PULL ON CACHE BOOL "Enable Pull" FORCE)
+set(ENABLE_COMPRESSION ON CACHE BOOL "Enable ZLIB" FORCE)
+
+# 额外保险：防止它覆盖你的 C++ 标准
+set(OVERRIDE_CXX_STANDARD OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(prometheus-cpp)
+
 
 # ---------- 业务与测试 ----------
 add_subdirectory(src)
